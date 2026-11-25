@@ -101,7 +101,11 @@ export const SignupRegistrationCard: React.FC = () => {
   useEffect(() => {
     const errorParam = searchParams.get('error');
     if (errorParam) {
-      if (errorParam === 'google_auth_failed') {
+      if (errorParam === 'google_unconfigured') {
+        setErrorMessage('Google OAuth is not configured on the server yet. Please create an account using your email and password.');
+      } else if (errorParam === 'google_auth_cancelled') {
+        setErrorMessage('Google Sign-Up was cancelled. You can try again anytime.');
+      } else if (errorParam === 'google_auth_failed') {
         setErrorMessage('Google Authentication was not completed. Please try again.');
       } else if (errorParam === 'no_code') {
         setErrorMessage('Google did not return an authorization code. Please retry.');
@@ -155,12 +159,17 @@ export const SignupRegistrationCard: React.FC = () => {
     setErrorMessage(null);
 
     // Basic Validations
+    const normalizedEmail = email.trim().replace('#', '@').toLowerCase();
     if (!fullName.trim()) {
       setErrorMessage('Please enter your full name.');
       return;
     }
-    if (!email.trim() || !email.includes('@')) {
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
       setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+    if (!phoneNumber.trim()) {
+      setErrorMessage('Please enter your phone number.');
       return;
     }
     if (!password || password.length < 8) {
@@ -193,7 +202,7 @@ export const SignupRegistrationCard: React.FC = () => {
 
       const payload: any = {
         fullName: fullName.trim(),
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         password,
         phone: fullPhone,
         role: activeRole,
@@ -212,11 +221,11 @@ export const SignupRegistrationCard: React.FC = () => {
         payload.partnershipInterest = partnershipInterest;
       }
 
-      await authRegister(payload);
+      const registeredUser = await authRegister(payload);
 
       setSuccessModalData({
         role: activeRole,
-        status: 'active',
+        status: (registeredUser?.status as 'active' | 'pending') || 'active',
         message: 'Welcome to Dracovion Technologies. Your account has been initialized.',
       });
     } catch (err: any) {
@@ -233,10 +242,10 @@ export const SignupRegistrationCard: React.FC = () => {
 
     switch (role) {
       case 'student':
-        navigate('/portal/student');
+        navigate('/student/dashboard');
         break;
       case 'partner':
-        navigate('/portal/partner');
+        navigate('/partner/dashboard');
         break;
       case 'client':
       default:
@@ -684,7 +693,7 @@ export const SignupRegistrationCard: React.FC = () => {
           {activeRole === 'client' && (
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                How did you hear about us? <span className="text-[#FFBD55]">*</span>
+                How did you hear about us?
               </label>
               <div className="relative">
                 <Megaphone className="w-4 h-4 text-[#9299A6] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -811,7 +820,6 @@ export const SignupRegistrationCard: React.FC = () => {
           <div className="pt-1">
             <label className="flex items-center gap-2.5 cursor-pointer select-none group">
               <div
-                onClick={() => setAgreeTerms(!agreeTerms)}
                 className={`w-4 h-4 rounded border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
                   agreeTerms
                     ? 'bg-gradient-to-tr from-[#D6A94F] to-[#FFBD55] border-[#FFBD55] text-[#050609] shadow-[0_0_8px_rgba(214,169,79,0.5)]'

@@ -6,8 +6,15 @@ import { AuthenticatedRequest, UserRole } from '../types';
 import { BadRequestError, ConflictError, NotFoundError, UnauthorizedError, ForbiddenError } from '../utils/errors';
 import { recordAuditLog } from '../services/auditService';
 import { generateAndSendOTP, verifyOTP } from '../services/otpService';
+import { sendWelcomeEmail } from '../services/emailService';
 import { env } from '../config/env';
 import { encryptEmployeePassword } from '../utils/credentialCrypto';
+import {
+  assertUserIsActive,
+  formatAuthUserResponse,
+  resolvePortalRedirect,
+  saveSession,
+} from '../utils/session';
 
 const VALID_TEAM_CODES = new Set([
   'DRACOVION-TEAM-2026',
@@ -43,6 +50,9 @@ const loginSchema = z.object({
 
 export async function register(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
+    if (req.body && typeof req.body.email === 'string') {
+      req.body.email = req.body.email.trim().replace('#', '@');
+    }
     const data = registerSchema.parse(req.body);
 
     const existingUser = await User.findOne({ email: data.email });
@@ -75,12 +85,22 @@ export async function register(req: AuthenticatedRequest, res: Response, next: N
       dbRole = 'client';
     }
 
+    const accountType =
+      dbRole === 'student'
+        ? 'student'
+        : dbRole === 'partner' || Boolean(data.companyName?.trim())
+        ? 'company'
+        : 'individual';
+
     const user = await User.create({
       email: data.email,
       passwordHash,
       fullName: data.fullName,
       phone: data.phone,
       role: dbRole,
+      portalType: 'client',
+      accountType,
+      authProvider: 'local',
       status: userStatus,
       companyName: data.companyName,
       collegeOrUniversity: data.collegeOrUniversity,
@@ -98,6 +118,8 @@ export async function register(req: AuthenticatedRequest, res: Response, next: N
       lastLoginAt: userStatus === 'active' ? new Date() : undefined,
     });
 
+    const { portalType, redirectTo } = resolvePortalRedirect(user);
+
     // Only establish active session if account is active
     if (userStatus === 'active') {
       (req.session as any).user = {
@@ -105,7 +127,10 @@ export async function register(req: AuthenticatedRequest, res: Response, next: N
         email: user.email,
         role: user.role,
         fullName: user.fullName,
+        portalType,
       };
+      await saveSession(req);
+      sendWelcomeEmail(user.email, user.fullName).catch(() => {});
     }
 
     await recordAuditLog({
@@ -122,15 +147,9 @@ export async function register(req: AuthenticatedRequest, res: Response, next: N
       success: true,
       message: welcomeMessage,
       status: userStatus,
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        status: user.status,
-        companyName: user.companyName,
-        collegeOrUniversity: user.collegeOrUniversity,
-      },
+      portalType,
+      redirectTo,
+      user: formatAuthUserResponse(user),
     });
   } catch (err) {
     next(err);
@@ -148,16 +167,15 @@ export async function login(req: AuthenticatedRequest, res: Response, next: Next
       throw new UnauthorizedError('Invalid email or password');
     }
 
-    if (user.status !== 'active') {
-      if (user.status === 'pending') {
-        throw new ForbiddenError(
-          'Your account registration has been submitted and is currently pending administrative verification by Dracovion leadership. Please check back shortly.'
-        );
-      }
-      throw new ForbiddenError(
-        user.moderationReason
-          ? `Your account has been disabled: ${user.moderationReason}`
-          : 'Your account has been suspended or deactivated.'
+    assertUserIsActive(
+      user,
+      'Your account registration has been submitted and is currently pending administrative verification by Dracovion leadership. Please check back shortly.'
+    );
+
+    if (!user.passwordHash) {
+      const providerName = user.authProvider === 'github' ? 'GitHub' : 'Google';
+      throw new UnauthorizedError(
+        `This account was created via ${providerName} Sign-In. Please click "Continue with ${providerName}" or use "Forgot password?" to set a password.`
       );
     }
 
@@ -169,12 +187,9 @@ export async function login(req: AuthenticatedRequest, res: Response, next: Next
     user.lastLoginAt = new Date();
     await user.save();
 
-    const portalType = user.portalType || (['super_admin', 'owner', 'ceo', 'employee'].includes(user.role) ? 'workspace' : 'client');
-    const redirectTo = portalType === 'workspace'
-      ? (user.role === 'super_admin' ? '/workspace/super-admin' : '/workspace/orders')
-      : '/portal/dashboard';
+    const { portalType, redirectTo } = resolvePortalRedirect(user);
 
-    // Establish secure session
+    // Establish secure session and flush before responding
     (req.session as any).user = {
       userId: user._id.toString(),
       email: user.email,
@@ -185,6 +200,7 @@ export async function login(req: AuthenticatedRequest, res: Response, next: Next
       designation: user.designation,
       employeeCode: user.employeeCode,
     };
+    await saveSession(req);
 
     await recordAuditLog({
       userId: user._id,
@@ -200,18 +216,7 @@ export async function login(req: AuthenticatedRequest, res: Response, next: Next
       message: 'Login successful',
       portalType,
       redirectTo,
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        portalType,
-        companyName: user.companyName,
-        collegeOrUniversity: user.collegeOrUniversity,
-        department: user.department,
-        designation: user.designation,
-        employeeCode: user.employeeCode,
-      },
+      user: formatAuthUserResponse(user),
     });
   } catch (err) {
     next(err);
@@ -261,43 +266,9 @@ export async function getMe(req: AuthenticatedRequest, res: Response, next: Next
       return;
     }
 
-    const portalType = user.portalType || (['super_admin', 'owner', 'ceo', 'employee'].includes(user.role) ? 'workspace' : 'client');
-
     res.json({
       success: true,
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        phone: user.phone,
-        avatarUrl: user.avatarUrl,
-        role: user.role,
-        portalType,
-        accountType: user.accountType || (user.collegeOrUniversity ? 'student' : 'company'),
-        companyName: user.companyName,
-        collegeOrUniversity: user.collegeOrUniversity,
-        department: user.department,
-        degree: user.degree,
-        academicYear: user.academicYear,
-        registerNumber: user.registerNumber,
-        githubProfile: user.githubProfile,
-        linkedinProfile: user.linkedinProfile,
-        projectDomain: user.projectDomain,
-        industry: user.industry,
-        designation: user.designation,
-        companyWebsite: user.companyWebsite,
-        companySize: user.companySize,
-        gstin: user.gstin,
-        city: user.city,
-        state: user.state,
-        workAddress: user.workAddress,
-        bio: user.bio,
-        employeeCode: user.employeeCode,
-        isEmailVerified: user.isEmailVerified,
-        status: user.status,
-        lastLoginAt: user.lastLoginAt,
-        createdAt: user.createdAt,
-      },
+      user: formatAuthUserResponse(user),
     });
   } catch (err) {
     next(err);
@@ -377,43 +348,10 @@ export async function updateProfile(req: AuthenticatedRequest, res: Response, ne
       (req.session as any).user.companyName = user.companyName;
     }
 
-    const portalType = user.portalType || (['super_admin', 'owner', 'ceo', 'employee'].includes(user.role) ? 'workspace' : 'client');
-
     res.json({
       success: true,
       message: 'Profile details saved successfully.',
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        phone: user.phone,
-        avatarUrl: user.avatarUrl,
-        role: user.role,
-        portalType,
-        accountType: user.accountType || (user.collegeOrUniversity ? 'student' : 'company'),
-        companyName: user.companyName,
-        collegeOrUniversity: user.collegeOrUniversity,
-        department: user.department,
-        degree: user.degree,
-        academicYear: user.academicYear,
-        registerNumber: user.registerNumber,
-        githubProfile: user.githubProfile,
-        linkedinProfile: user.linkedinProfile,
-        projectDomain: user.projectDomain,
-        industry: user.industry,
-        designation: user.designation,
-        companyWebsite: user.companyWebsite,
-        companySize: user.companySize,
-        gstin: user.gstin,
-        city: user.city,
-        state: user.state,
-        workAddress: user.workAddress,
-        bio: user.bio,
-        employeeCode: user.employeeCode,
-        isEmailVerified: user.isEmailVerified,
-        status: user.status,
-        updatedAt: user.updatedAt,
-      },
+      user: formatAuthUserResponse(user),
     });
   } catch (err) {
     next(err);

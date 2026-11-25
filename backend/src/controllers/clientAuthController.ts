@@ -17,6 +17,14 @@ import { recordAuditLog } from '../services/auditService';
 import { env } from '../config/env';
 import { getAllowedOrigins, normalizeOrigin } from '../config/cors';
 import { logger } from '../utils/logger';
+import {
+  assertUserIsActive,
+  decodeOAuthState,
+  encodeOAuthState,
+  formatAuthUserResponse,
+  resolvePortalRedirect,
+  saveSession,
+} from '../utils/session';
 
 const sendOtpSchema = z.object({
   email: z.string().email('Please provide a valid email address').trim().toLowerCase(),
@@ -126,6 +134,7 @@ export async function verifyClientOTP(req: AuthenticatedRequest, res: Response, 
       fullName: user.fullName,
       portalType: user.portalType,
     };
+    await saveSession(req);
 
     await recordAuditLog({
       userId: user._id,
@@ -138,18 +147,7 @@ export async function verifyClientOTP(req: AuthenticatedRequest, res: Response, 
     res.json({
       success: true,
       message: 'Email successfully verified! Logged into Dracovion Client Portal.',
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        phone: user.phone,
-        role: user.role,
-        portalType: user.portalType,
-        accountType: user.accountType || (user.collegeOrUniversity ? 'student' : 'company'),
-        companyName: user.companyName,
-        collegeOrUniversity: user.collegeOrUniversity,
-        department: user.department,
-      },
+      user: formatAuthUserResponse(user),
     });
   } catch (err) {
     next(err);
@@ -162,6 +160,9 @@ export async function verifyClientOTP(req: AuthenticatedRequest, res: Response, 
  */
 export async function clientPasswordLogin(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
+    if (req.body && typeof req.body.email === 'string') {
+      req.body.email = req.body.email.trim().replace('#', '@');
+    }
     const { email, password } = clientLoginSchema.parse(req.body);
 
     const user = await User.findOne({ email });
@@ -173,8 +174,12 @@ export async function clientPasswordLogin(req: AuthenticatedRequest, res: Respon
       throw new BadRequestError('This account is registered for internal workspace access. Please log in at the Workspace Portal.');
     }
 
-    if (user.status !== 'active') {
-      throw new UnauthorizedError('Your client account has been suspended. Please contact Dracovion support.');
+    assertUserIsActive(user);
+
+    if (!user.passwordHash) {
+      throw new UnauthorizedError(
+        'This account uses Google Sign-In. Please click "Continue with Google" or use "Forgot password?" to create a password.'
+      );
     }
 
     const isMatch = await user.comparePassword(password);
@@ -192,6 +197,7 @@ export async function clientPasswordLogin(req: AuthenticatedRequest, res: Respon
       fullName: user.fullName,
       portalType: user.portalType,
     };
+    await saveSession(req);
 
     await recordAuditLog({
       userId: user._id,
@@ -204,18 +210,7 @@ export async function clientPasswordLogin(req: AuthenticatedRequest, res: Respon
     res.json({
       success: true,
       message: 'Login successful',
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        phone: user.phone,
-        role: user.role,
-        portalType: user.portalType,
-        accountType: user.accountType || (user.collegeOrUniversity ? 'student' : 'company'),
-        companyName: user.companyName,
-        collegeOrUniversity: user.collegeOrUniversity,
-        department: user.department,
-      },
+      user: formatAuthUserResponse(user),
     });
   } catch (err) {
     next(err);
@@ -229,20 +224,25 @@ export async function clientPasswordLogin(req: AuthenticatedRequest, res: Respon
  */
 const ALLOWED_CLIENT_ORIGINS = new Set(getAllowedOrigins());
 
-function rememberClientOrigin(req: AuthenticatedRequest): void {
+function extractAllowedOriginFromRequest(req: AuthenticatedRequest): string | undefined {
   const rawSource = req.get('origin') || req.get('referer');
-  if (!rawSource) return;
+  if (!rawSource) return undefined;
   try {
     const parsedOrigin = new URL(rawSource).origin;
-    if (ALLOWED_CLIENT_ORIGINS.has(parsedOrigin) && req.session) {
-      (req.session as any).oauthClientOrigin = parsedOrigin;
+    if (ALLOWED_CLIENT_ORIGINS.has(parsedOrigin)) {
+      return parsedOrigin;
     }
   } catch {
     // ignore malformed origin header
   }
+  return undefined;
 }
 
 function getClientRedirectBase(req: AuthenticatedRequest): string {
+  const statePayload = decodeOAuthState(req.query.state as string);
+  if (statePayload?.clientOrigin && ALLOWED_CLIENT_ORIGINS.has(statePayload.clientOrigin)) {
+    return statePayload.clientOrigin;
+  }
   const savedOrigin = (req.session as any)?.oauthClientOrigin;
   if (savedOrigin && ALLOWED_CLIENT_ORIGINS.has(savedOrigin)) {
     return savedOrigin;
@@ -250,10 +250,34 @@ function getClientRedirectBase(req: AuthenticatedRequest): string {
   return normalizeOrigin(env.CLIENT_URL);
 }
 
-export function getGoogleAuthUrlHandler(req: AuthenticatedRequest, res: Response): void {
-  rememberClientOrigin(req);
+function resolveGoogleCallbackUri(req: AuthenticatedRequest): string | undefined {
   const customRedirect = (req.query.redirect_uri as string) || undefined;
-  const url = getGoogleAuthURL('client_portal', customRedirect);
+  if (customRedirect) return customRedirect;
+  if (
+    env.NODE_ENV === 'production' &&
+    (!env.GOOGLE_CALLBACK_URL || env.GOOGLE_CALLBACK_URL.includes('localhost'))
+  ) {
+    const host = req.get('host');
+    if (host) {
+      return `https://${host}/api/v1/auth/client/google/callback`;
+    }
+  }
+  return undefined;
+}
+
+export async function getGoogleAuthUrlHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const origin = extractAllowedOriginFromRequest(req);
+  const resolvedRedirect = resolveGoogleCallbackUri(req);
+  if (req.session) {
+    if (origin) (req.session as any).oauthClientOrigin = origin;
+    if (resolvedRedirect) (req.session as any).googleRedirectUri = resolvedRedirect;
+    await saveSession(req);
+  }
+
+  const state = origin
+    ? encodeOAuthState({ portal: 'client_portal', clientOrigin: origin })
+    : 'client_portal';
+  const url = getGoogleAuthURL(state, resolvedRedirect);
 
   if (req.query.format === 'json' || (req.headers.accept === 'application/json' && !req.headers.accept?.includes('text/html'))) {
     res.json({ success: true, url });
@@ -267,9 +291,19 @@ export function getGoogleAuthUrlHandler(req: AuthenticatedRequest, res: Response
  * Handles Google OAuth redirect callback, provisions/updates user account, and sets session.
  */
 export async function handleGoogleCallback(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const oauthError = req.query.error as string;
   const code = req.query.code as string;
-  const redirectUri = (req.query.redirect_uri as string) || undefined;
+  const redirectUri =
+    (req.query.redirect_uri as string) ||
+    (req.session as any)?.googleRedirectUri ||
+    resolveGoogleCallbackUri(req);
   const clientBase = getClientRedirectBase(req);
+
+  if (oauthError) {
+    const mappedErr = oauthError === 'access_denied' ? 'google_auth_cancelled' : encodeURIComponent(oauthError);
+    res.redirect(`${clientBase}/login?error=${mappedErr}`);
+    return;
+  }
 
   if (!code) {
     res.redirect(`${clientBase}/signin?error=no_code`);
@@ -308,10 +342,7 @@ export async function handleGoogleCallback(req: AuthenticatedRequest, res: Respo
       sendWelcomeEmail(user.email, user.fullName).catch(() => {});
     }
 
-    const portalType = user.portalType || (['super_admin', 'owner', 'ceo', 'employee'].includes(user.role) ? 'workspace' : 'client');
-    const targetDashboard = portalType === 'workspace'
-      ? (user.role === 'super_admin' ? '/workspace/super-admin' : '/workspace/orders')
-      : '/portal/dashboard';
+    const { portalType, redirectTo: targetDashboard } = resolvePortalRedirect(user);
 
     (req.session as any).user = {
       userId: user._id.toString(),
@@ -331,12 +362,8 @@ export async function handleGoogleCallback(req: AuthenticatedRequest, res: Respo
       details: { email: user.email, portalType, role: user.role },
     });
 
-    req.session.save((saveErr) => {
-      if (saveErr) {
-        logger.error('Error saving session in Google callback:', saveErr);
-      }
-      res.redirect(`${clientBase}${targetDashboard}?auth=google_success`);
-    });
+    await saveSession(req);
+    res.redirect(`${clientBase}${targetDashboard}?auth=google_success`);
   } catch (err: any) {
     logger.error('Google OAuth callback handler error:', err);
     res.redirect(`${clientBase}/signin?error=${encodeURIComponent(err.message || 'google_auth_failed')}`);
@@ -392,10 +419,7 @@ export async function verifyGoogleCredentialHandler(req: AuthenticatedRequest, r
       sendWelcomeEmail(user.email, user.fullName).catch(() => {});
     }
 
-    const portalType = user.portalType || (['super_admin', 'owner', 'ceo', 'employee'].includes(user.role) ? 'workspace' : 'client');
-    const targetDashboard = portalType === 'workspace'
-      ? (user.role === 'super_admin' ? '/workspace/super-admin' : '/workspace/orders')
-      : '/portal/dashboard';
+    const { portalType, redirectTo: targetDashboard } = resolvePortalRedirect(user);
 
     (req.session as any).user = {
       userId: user._id.toString(),
@@ -404,6 +428,7 @@ export async function verifyGoogleCredentialHandler(req: AuthenticatedRequest, r
       fullName: user.fullName,
       portalType,
     };
+    await saveSession(req);
 
     await recordAuditLog({
       userId: user._id,
@@ -420,14 +445,7 @@ export async function verifyGoogleCredentialHandler(req: AuthenticatedRequest, r
       message: 'Google authentication successful',
       portalType,
       redirectTo: targetDashboard,
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        portalType,
-        companyName: user.companyName,
-      },
+      user: formatAuthUserResponse(user),
     });
   } catch (err) {
     next(err);
@@ -437,9 +455,16 @@ export async function verifyGoogleCredentialHandler(req: AuthenticatedRequest, r
 /**
  * GET /api/v1/auth/client/github
  */
-export function getGitHubAuthUrlHandler(req: AuthenticatedRequest, res: Response): void {
-  rememberClientOrigin(req);
-  const url = getGitHubAuthURL('client_portal');
+export async function getGitHubAuthUrlHandler(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const origin = extractAllowedOriginFromRequest(req);
+  if (origin && req.session) {
+    (req.session as any).oauthClientOrigin = origin;
+    await saveSession(req);
+  }
+  const state = origin
+    ? encodeOAuthState({ portal: 'client_portal', clientOrigin: origin })
+    : 'client_portal';
+  const url = getGitHubAuthURL(state);
   if (req.query.format === 'json' || (req.headers.accept === 'application/json' && !req.headers.accept?.includes('text/html'))) {
     res.json({ success: true, url });
   } else {

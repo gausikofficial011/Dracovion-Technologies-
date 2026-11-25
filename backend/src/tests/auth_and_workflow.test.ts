@@ -398,4 +398,102 @@ describe('Dracovion Technologies Backend Integration & Security Tests', () => {
       expect(loginNewRes.status).toBe(200);
     });
   });
+
+  describe('Multi-Role Signup, Login Normalization & Provider Handling', () => {
+    it('Supports client, student, partner, and team registration with immediate active session and portal routing', async () => {
+      const studentAgent = request.agent(app);
+      const studentEmail = `student_${Date.now()}@college.edu`;
+
+      const studentReg = await studentAgent.post('/api/v1/auth/register').send({
+        email: studentEmail,
+        password: 'StudentPass2026!',
+        fullName: 'Arjun Student',
+        phone: '+91 9876543210',
+        role: 'student',
+        collegeOrUniversity: 'Anna University',
+        department: 'CSE',
+        academicYear: 'Final Year',
+      });
+      expect(studentReg.status).toBe(201);
+      expect(studentReg.body.user.role).toBe('student');
+      expect(studentReg.body.user.portalType).toBe('client');
+      expect(studentReg.body.redirectTo).toBe('/student/dashboard');
+
+      // Session is immediately active without separate login
+      const studentMe = await studentAgent.get('/api/v1/auth/me');
+      expect(studentMe.status).toBe(200);
+      expect(studentMe.body.user.email).toBe(studentEmail);
+
+      // Hash-to-@ typo normalization on login
+      const normalizedLogin = await request(app).post('/api/v1/auth/login').send({
+        email: studentEmail.replace('@', '#'),
+        password: 'StudentPass2026!',
+      });
+      expect(normalizedLogin.status).toBe(200);
+      expect(normalizedLogin.body.redirectTo).toBe('/student/dashboard');
+
+      // Partner registration
+      const partnerEmail = `partner_${Date.now()}@firm.com`;
+      const partnerReg = await request(app).post('/api/v1/auth/register').send({
+        email: partnerEmail,
+        password: 'PartnerPass2026!',
+        fullName: 'Priya Partner',
+        phone: '+91 9876500001',
+        role: 'partner',
+        companyName: 'Apex Partner Firm',
+      });
+      expect(partnerReg.status).toBe(201);
+      expect(partnerReg.body.user.role).toBe('partner');
+      expect(partnerReg.body.redirectTo).toBe('/partner/dashboard');
+
+      // Team member with valid invite code activates immediately; without code stays pending
+      const activeTeamReg = await request(app).post('/api/v1/auth/register').send({
+        email: `team_ok_${Date.now()}@example.com`,
+        password: 'TeamPass2026!',
+        fullName: 'Active Team User',
+        role: 'team',
+        invitationCode: 'DRACOVION-TEAM-2026',
+      });
+      expect(activeTeamReg.status).toBe(201);
+      expect(activeTeamReg.body.status).toBe('active');
+      expect(activeTeamReg.body.redirectTo).toBe('/team/dashboard');
+
+      const pendingTeamEmail = `team_wait_${Date.now()}@example.com`;
+      const pendingTeamReg = await request(app).post('/api/v1/auth/register').send({
+        email: pendingTeamEmail,
+        password: 'TeamPass2026!',
+        fullName: 'Pending Team User',
+        role: 'team',
+      });
+      expect(pendingTeamReg.status).toBe(201);
+      expect(pendingTeamReg.body.status).toBe('pending');
+
+      const pendingLogin = await request(app).post('/api/v1/auth/login').send({
+        email: pendingTeamEmail,
+        password: 'TeamPass2026!',
+      });
+      expect(pendingLogin.status).toBe(403);
+    });
+
+    it('Gives clear guidance when a passwordless Google account tries email+password login', async () => {
+      const googleEmail = `google_only_${Date.now()}@gmail.com`;
+      await User.create({
+        email: googleEmail,
+        fullName: 'Google Only Client',
+        googleId: 'g_123456',
+        role: 'client',
+        portalType: 'client',
+        authProvider: 'google',
+        isEmailVerified: true,
+        status: 'active',
+      });
+
+      const res = await request(app).post('/api/v1/auth/login').send({
+        email: googleEmail,
+        password: 'AnyPassword123!',
+      });
+      expect(res.status).toBe(401);
+      expect(res.body.error.message).toContain('Google Sign-In');
+    });
+  });
 });

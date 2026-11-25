@@ -38,6 +38,11 @@ export interface IUser extends Document {
   state?: string;
   workAddress?: string;
   bio?: string;
+  organizationType?: string;
+  websiteUrl?: string;
+  referralSource?: string;
+  invitationCode?: string;
+  partnershipInterest?: string;
   // Workspace-specific extended fields
   designation?: string;
   employeeCode?: string;
@@ -75,7 +80,7 @@ const UserSchema = new Schema<IUser>(
     phone: { type: String, trim: true },
     role: {
       type: String,
-      enum: ['client', 'employee', 'owner', 'ceo', 'super_admin'],
+      enum: ['client', 'employee', 'owner', 'ceo', 'super_admin', 'admin', 'student', 'partner', 'team_member'],
       default: 'client',
       index: true,
     },
@@ -126,6 +131,11 @@ const UserSchema = new Schema<IUser>(
     state: { type: String, trim: true },
     workAddress: { type: String, trim: true },
     bio: { type: String, trim: true },
+    organizationType: { type: String, trim: true },
+    websiteUrl: { type: String, trim: true },
+    referralSource: { type: String, trim: true },
+    invitationCode: { type: String, trim: true },
+    partnershipInterest: { type: String, trim: true },
     designation: { type: String, trim: true },
     employeeCode: { type: String, trim: true },
     employeeManagedPassword: { type: String }, // Stored encrypted for employees only

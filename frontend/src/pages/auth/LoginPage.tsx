@@ -30,16 +30,21 @@ export const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { isFieldUnlocked, unlockField, maskedInputType, maskedInputStyle } = useAntiAutofill();
 
-  const getDashboardPath = () => {
-    if (!user) return '/portal/dashboard';
+  const resolveDashboardPath = (targetUser?: { role?: string; portalType?: string } | null) => {
+    if (!targetUser) return '/portal/dashboard';
     if (
-      user.portalType === 'workspace' ||
-      ['super_admin', 'owner', 'ceo', 'employee', 'admin'].includes(user.role)
+      targetUser.portalType === 'workspace' ||
+      ['super_admin', 'owner', 'ceo', 'employee', 'admin'].includes(targetUser.role || '')
     ) {
-      return user.role === 'super_admin' ? '/workspace/super-admin' : '/workspace/orders';
+      return targetUser.role === 'super_admin' ? '/workspace/super-admin' : '/workspace/orders';
     }
+    if (targetUser.role === 'student') return '/student/dashboard';
+    if (targetUser.role === 'partner') return '/partner/dashboard';
+    if (targetUser.role === 'team_member') return '/team/dashboard';
     return '/portal/dashboard';
   };
+
+  const getDashboardPath = () => resolveDashboardPath(user);
 
   useEffect(() => {
     const errorParam = searchParams.get('error');
@@ -53,6 +58,8 @@ export const LoginPage: React.FC = () => {
         setErrorMessage(
           'Google OAuth credentials are not configured on the server yet. Please sign in with email and password.'
         );
+      } else if (errorParam === 'google_auth_cancelled') {
+        setErrorMessage('Google Sign-In was cancelled. You can try again anytime or sign in with your password.');
       } else if (errorParam === 'google_auth_failed') {
         setErrorMessage('Google Authentication was not completed. Please try again.');
       } else if (errorParam === 'github_auth_failed') {
@@ -73,21 +80,9 @@ export const LoginPage: React.FC = () => {
     try {
       // Auto-normalize any # or typo into @
       const cleanEmail = email.trim().replace('#', '@');
-      const user = await login({ email: cleanEmail, password });
+      const authenticatedUser = await login({ email: cleanEmail, password });
 
-      // Server-verified post-authentication portal routing
-      if (
-        user.portalType === 'workspace' ||
-        ['super_admin', 'owner', 'ceo', 'employee', 'admin'].includes(user.role)
-      ) {
-        if (user.role === 'super_admin') {
-          navigate('/workspace/super-admin');
-        } else {
-          navigate('/workspace/orders');
-        }
-      } else {
-        navigate('/portal/dashboard');
-      }
+      navigate(resolveDashboardPath(authenticatedUser));
     } catch (err: any) {
       setErrorMessage(err.message || 'Invalid email or password. Please verify your credentials.');
     } finally {

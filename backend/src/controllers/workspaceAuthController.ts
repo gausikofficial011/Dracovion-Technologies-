@@ -4,6 +4,7 @@ import { User } from '../models/User';
 import { AuthenticatedRequest } from '../types';
 import { UnauthorizedError, ForbiddenError } from '../utils/errors';
 import { recordAuditLog } from '../services/auditService';
+import { assertUserIsActive, saveSession } from '../utils/session';
 
 const workspaceLoginSchema = z.object({
   email: z.string().email('Please enter your work email').trim().toLowerCase(),
@@ -31,9 +32,7 @@ export async function workspaceLogin(req: AuthenticatedRequest, res: Response, n
       throw new ForbiddenError('This account is registered for Client Portal access, not Internal Workspace.');
     }
 
-    if (user.status !== 'active') {
-      throw new ForbiddenError('Your workspace account has been suspended or is pending administrative authorization.');
-    }
+    assertUserIsActive(user, 'Your workspace account is pending administrative authorization.');
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
@@ -53,6 +52,7 @@ export async function workspaceLogin(req: AuthenticatedRequest, res: Response, n
       designation: user.designation,
       employeeCode: user.employeeCode,
     };
+    await saveSession(req);
 
     await recordAuditLog({
       userId: user._id,

@@ -37,11 +37,20 @@ class ApiClient {
       headers.set('Content-Type', 'application/json');
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      credentials: 'include', // Sends HTTP-only session cookie automatically
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include', // Sends HTTP-only session cookie automatically
+      });
+    } catch {
+      const networkError: any = new Error(
+        'Unable to reach the Dracovion API server. If the backend was idle, wait ~30 seconds and try again.'
+      );
+      networkError.status = 0;
+      throw networkError;
+    }
 
     const data = await response.json().catch(() => ({}));
 
