@@ -1,5 +1,5 @@
 import React from 'react';
-import founderPhoto from '../../assets/founder-gausik.png';
+import dracovionLogoImg from '../../assets/dracovion_technologies_ascending_spiral_black_gold.png';
 
 export interface FounderPortraitProps {
   variant?: 'card' | 'avatar';
@@ -16,7 +16,7 @@ const AVATAR_SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
 };
 
 /**
- * Renders the official portrait of Dracovion Technologies founder Gausik Srinivasan
+ * Renders the official Dracovion Technologies logo emblem/card
  * with obsidian-and-gold luxury framing across public and portal views.
  */
 export const FounderPortrait: React.FC<FounderPortraitProps> = ({
@@ -25,18 +25,22 @@ export const FounderPortrait: React.FC<FounderPortraitProps> = ({
   showBadge = true,
   className = '',
 }) => {
-  const altText = 'Gausik Srinivasan — Founder & Principal Architect, Dracovion Technologies';
+  const altText = 'Dracovion Technologies — Official Logo';
 
   if (variant === 'card') {
     return (
       <div
-        className={`relative rounded-2xl overflow-hidden border border-[#D6A94F]/45 bg-[#0A0D13] shadow-[0_18px_45px_rgba(0,0,0,0.85),0_0_25px_rgba(214,169,79,0.16)] group select-none ${className}`}
+        className={`relative rounded-2xl overflow-hidden border border-[#D6A94F]/45 bg-[#050609] shadow-[0_18px_45px_rgba(0,0,0,0.85),0_0_25px_rgba(214,169,79,0.16)] group select-none ${className}`}
       >
-        <div className="relative aspect-[4/4.6] w-full overflow-hidden bg-gradient-to-b from-[#D5DCE8] via-[#B4BECB] to-[#0A0D13]">
+        <div
+          className={`relative aspect-[4/4.6] w-full overflow-hidden bg-black flex items-center justify-center p-5 ${
+            showBadge ? 'pb-24' : ''
+          }`}
+        >
           <img
-            src={founderPhoto}
+            src={dracovionLogoImg}
             alt={altText}
-            className="w-full h-full object-cover object-top scale-[1.06] origin-top transition-transform duration-700 group-hover:scale-[1.09]"
+            className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-[1.04]"
             loading="lazy"
           />
           <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_36px_rgba(5,6,9,0.45)]" />
@@ -62,15 +66,15 @@ export const FounderPortrait: React.FC<FounderPortraitProps> = ({
 
   return (
     <div
-      className={`relative rounded-full overflow-hidden border-2 border-[#D6A94F]/75 ring-1 ring-[#FFBD55]/20 bg-[#161B24] shadow-[0_0_16px_rgba(214,169,79,0.28)] shrink-0 select-none ${AVATAR_SIZE_CLASSES[size]} ${className}`}
+      className={`relative rounded-full overflow-hidden border-2 border-[#D6A94F]/75 ring-1 ring-[#FFBD55]/20 bg-black shadow-[0_0_16px_rgba(214,169,79,0.28)] shrink-0 select-none ${AVATAR_SIZE_CLASSES[size]} ${className}`}
     >
       <img
-        src={founderPhoto}
+        src={dracovionLogoImg}
         alt={altText}
-        className="w-full h-full object-cover object-top scale-[2.25] origin-[48%_14%]"
+        className="w-full h-full object-contain p-1"
         loading="lazy"
       />
-      <div className="absolute inset-0 rounded-full pointer-events-none shadow-[inset_0_0_14px_rgba(5,6,9,0.65)]" />
+      <div className="absolute inset-0 rounded-full pointer-events-none shadow-[inset_0_0_10px_rgba(5,6,9,0.5)]" />
     </div>
   );
 };

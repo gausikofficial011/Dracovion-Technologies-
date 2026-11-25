@@ -33,15 +33,15 @@ export async function seedInitialData(): Promise<void> {
         department: 'Executive Governance',
         employeeCode: 'DRV-SA-001',
         phone: env.BUSINESS_PHONE,
-        avatarUrl: '/founder-gausik.png',
+        avatarUrl: '/dracovion_technologies_ascending_spiral_black_gold.png',
         status: 'active',
         isEmailVerified: true,
       });
       logger.info(`Super Admin initialized: ${env.SUPER_ADMIN_EMAIL}`);
     } else {
       let modified = false;
-      if (!superAdmin.avatarUrl) {
-        superAdmin.avatarUrl = '/founder-gausik.png';
+      if (!superAdmin.avatarUrl || superAdmin.avatarUrl === '/founder-gausik.png') {
+        superAdmin.avatarUrl = '/dracovion_technologies_ascending_spiral_black_gold.png';
         modified = true;
       }
       if (!superAdmin.phone || superAdmin.phone === '+91 98401 99999') {
