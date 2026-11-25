@@ -1,0 +1,17 @@
+node_modules/
+frontend/
+*.log
+.env
+.env.*
+!.env.example
+backend/src/
+backend/tsconfig*.json
+*.md
+.git/
+.gitignore
+uploads/
+backups/
+backend/backups/
+dist/
+backend/dist/
+coverage/

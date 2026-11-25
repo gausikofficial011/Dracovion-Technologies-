@@ -1,0 +1,124 @@
+# ==============================================================================
+# Render.com Deployment — Dracovion Technologies Backend API
+# Deploy at: https://dashboard.render.com → New Web Service → Connect GitHub
+# ==============================================================================
+services:
+  - type: web
+    name: dracovion-backend
+    runtime: node
+    region: singapore   # Closest to Tamil Nadu, India
+    plan: free          # Upgrade to "starter" ($7/mo) for always-on (no sleep)
+
+    # Build: install backend workspace deps via root lockfile and compile TypeScript
+    buildCommand: npm ci --include-workspace-root --workspace=backend && npm run build --workspace=backend
+
+    # Start: run compiled server from backend workspace root
+    startCommand: npm run start --workspace=backend
+
+    # Health check path (Render uses this to confirm the service is live)
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # =========================================================
+      # IMPORTANT: Set these in Render Dashboard → Environment tab
+      # (Never commit real values here)
+      # =========================================================
+
+      - key: MONGODB_URI
+        sync: false   # Set manually in Render Dashboard
+
+      - key: SESSION_SECRET
+        generateValue: true
+
+      - key: SESSION_NAME
+        value: dracovion.sid
+
+      - key: SESSION_MAX_AGE_MS
+        value: "2592000000"   # 30 days
+
+      - key: CLIENT_URL
+        sync: false   # e.g. https://dracovion-technologies.netlify.app or https://dracovion.com
+
+      - key: CORS_ORIGINS
+        sync: false   # Optional comma-separated additional allowed frontend URLs
+
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+      - key: GOOGLE_CALLBACK_URL
+        sync: false   # e.g. https://dracovion-backend.onrender.com/api/v1/auth/client/google/callback — NOT port 3000 in prod
+
+      - key: GMAIL_USER
+        value: dracoviontechnology@gmail.com
+
+      - key: GMAIL_APP_PASSWORD
+        sync: false   # Create at: myaccount.google.com → Security → App Passwords
+
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "150"
+
+      - key: INITIAL_OWNER_EMAIL
+        value: president@dracovion.com
+
+      - key: INITIAL_OWNER_PASSWORD
+        sync: false
+
+      - key: INITIAL_OWNER_NAME
+        value: "Platform President & Owner"
+
+      - key: SUPER_ADMIN_EMAIL
+        value: gausik@dracovion.com
+
+      - key: SUPER_ADMIN_PASSWORD
+        sync: false
+
+      - key: SUPER_ADMIN_NAME
+        value: "Gausik Srinivasan"
+
+      - key: CEO_EMAIL
+        value: ceo@dracovion.com
+
+      - key: CEO_PASSWORD
+        sync: false
+
+      - key: INITIAL_EMPLOYEE_EMAIL
+        value: employee@dracovion.com
+
+      - key: INITIAL_EMPLOYEE_PASSWORD
+        sync: false
+
+      - key: BUSINESS_NAME
+        value: "Dracovion Technologies"
+
+      - key: BUSINESS_EMAIL
+        value: dracoviontechnology@gmail.com
+
+      - key: BUSINESS_PHONE
+        value: "+91 9489832249"
+
+      - key: BUSINESS_ADDRESS_STATE
+        value: "Tamil Nadu"
+
+      - key: BUSINESS_ADDRESS_COUNTRY
+        value: "India"
+
+      - key: DEFAULT_CURRENCY
+        value: INR
+
+      - key: STORAGE_DRIVER
+        value: local
+
+      - key: STORAGE_LOCAL_DIR
+        value: ./uploads
+
+      - key: STORAGE_MAX_FILE_SIZE_BYTES
+        value: "15728640"

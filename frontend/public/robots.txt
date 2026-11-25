@@ -1,0 +1,28 @@
+User-agent: *
+Allow: /
+
+# Public pages - allow all crawlers
+Allow: /about
+Allow: /services
+Allow: /projects
+Allow: /careers
+Allow: /contact
+Allow: /pricing
+Allow: /allhunter
+Allow: /privacy
+Allow: /terms
+Allow: /refund-policy
+Allow: /cookies
+
+# Portals and auth routes are private — block from indexing
+Disallow: /portal/
+Disallow: /admin/
+Disallow: /workspace/
+Disallow: /login
+Disallow: /signin
+Disallow: /signup
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /api/
+
+Sitemap: https://dracovion.com/sitemap.xml

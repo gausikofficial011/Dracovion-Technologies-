@@ -1,0 +1,41 @@
+# ==============================================================================
+# Netlify Deployment — Dracovion Technologies Frontend
+# Deploy at: https://app.netlify.com → Add new site → Import from Git
+# ==============================================================================
+
+[build]
+  command = "npm ci && npm run build --workspace=frontend"
+  publish = "frontend/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# ==============================================================================
+# IMPORTANT: Set VITE_API_BASE_URL in Netlify Dashboard:
+#   Site Settings → Environment Variables → Add variable
+#   Key:   VITE_API_BASE_URL
+#   Value: https://dracovion-backend.onrender.com/api/v1
+#   (replace with your actual Render backend URL)
+# ==============================================================================
+
+# SPA routing: redirect all paths to index.html so React Router works
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Security headers for production
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+# Cache static assets aggressively
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

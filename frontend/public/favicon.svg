@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFBD55"/>
+      <stop offset="50%" stop-color="#D6A94F"/>
+      <stop offset="100%" stop-color="#F5D18A"/>
+    </linearGradient>
+    <linearGradient id="goldGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F5D18A" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#D6A94F" stop-opacity="0.2"/>
+    </linearGradient>
+    <filter id="goldFilter" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Midnight Shield Background -->
+  <rect width="100" height="100" rx="22" fill="#050609"/>
+  <rect x="2" y="2" width="96" height="96" rx="20" stroke="#D6A94F" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  <!-- Futuristic Dragon Head & Wings Emblem -->
+  <!-- Left Wing / Crest Sweep -->
+  <path d="M18 68 C 22 45, 34 30, 48 20 C 44 32, 45 42, 42 54 C 36 50, 26 56, 18 68 Z" fill="url(#goldGrad)" opacity="0.6"/>
+  <!-- Upper Majestic Horn -->
+  <path d="M48 20 C 58 12, 70 14, 82 24 C 72 26, 64 34, 58 42 C 54 32, 50 25, 48 20 Z" fill="url(#goldGrad)" filter="url(#goldFilter)"/>
+  <!-- Secondary Horn & Crest -->
+  <path d="M58 42 C 68 38, 76 42, 84 50 C 74 52, 68 58, 62 64 C 60 56, 59 48, 58 42 Z" fill="url(#goldGrad)" opacity="0.9"/>
+  <!-- Dragon Snout & Cyber Jawline -->
+  <path d="M38 46 L 54 44 L 62 52 L 46 68 L 32 64 L 38 46 Z" fill="#0A0D13" stroke="url(#goldGrad)" stroke-width="2"/>
+  <path d="M46 68 L 62 52 L 72 60 L 56 78 L 38 74 Z" fill="url(#goldGrad)" opacity="0.85"/>
+  <path d="M56 78 L 72 60 L 80 66 L 68 84 L 52 82 Z" fill="url(#goldGrad)" opacity="0.5"/>
+  <!-- Glowing Eye Core -->
+  <polygon points="48,49 54,47 52,52 47,51" fill="#FFFFFF" filter="url(#goldFilter)"/>
+  <circle cx="50" cy="49" r="1.5" fill="#FFBD55"/>
+  <!-- Micro Circuit Line -->
+  <line x1="32" y1="64" x2="22" y2="76" stroke="#D6A94F" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.7"/>
+  <circle cx="22" cy="76" r="2" fill="#FFBD55"/>
+</svg>
