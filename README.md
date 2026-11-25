@@ -113,8 +113,8 @@ The platform features **two user portals**:
 ### Installation
 ```bash
 # Clone repository
-git clone https://github.com/dracovion/dracovion-technologies.git
-cd dracovion-technologies
+git clone https://github.com/gausikofficial011/Dracovion-Technologies-.git
+cd Dracovion-Technologies-
 
 # Install dependencies across both workspaces
 npm install

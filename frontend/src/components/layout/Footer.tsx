@@ -43,7 +43,7 @@ export const Footer: React.FC = () => {
             {/* Social Icons (Direct SVG) */}
             <div className="flex items-center gap-3 pt-3">
               <a
-                href="https://github.com/dracovion-technologies"
+                href="https://github.com/dracovion-technology"
                 target="_blank"
                 rel="noreferrer"
                 className="w-9 h-9 rounded-xl bg-[#11151D] border border-[#292E38] hover:border-[#FFBD55] flex items-center justify-center text-slate-300 hover:text-[#FFBD55] transition-all"
@@ -187,7 +187,7 @@ export const Footer: React.FC = () => {
               </li>
               <li>
                 <a
-                  href="https://github.com/dracovion-technologies"
+                  href="https://github.com/dracovion-technology"
                   target="_blank"
                   rel="noreferrer"
                   className="hover:text-white transition-colors flex items-center gap-1.5"

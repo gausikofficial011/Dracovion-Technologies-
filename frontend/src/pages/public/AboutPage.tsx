@@ -92,14 +92,14 @@ export const AboutPage: React.FC = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <a
-                href="https://github.com/dracovion-technologies"
+                href="https://github.com/dracovion-technology"
                 target="_blank"
                 rel="noreferrer"
                 className="p-4 rounded-xl bg-[#0A0D13] border border-[#292E38] hover:border-[#FFBD55] transition-all group flex flex-col justify-between"
               >
                 <span className="text-xs font-mono text-[#9299A6] uppercase block mb-1 group-hover:text-[#FFBD55] transition-colors">Official GitHub</span>
                 <span className="text-sm font-semibold text-white flex items-center justify-between">
-                  <span>dracovion-technologies</span>
+                  <span>dracovion-technology</span>
                   <ArrowRight className="w-3.5 h-3.5 text-[#FFBD55] group-hover:translate-x-0.5 transition-transform" />
                 </span>
               </a>

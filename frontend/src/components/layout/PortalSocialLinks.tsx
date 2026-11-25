@@ -8,7 +8,7 @@ export const PortalSocialLinks: React.FC = () => {
   return (
     <div className="grid grid-cols-2 gap-2">
       <a
-        href="https://github.com/dracovion-technologies"
+        href="https://github.com/dracovion-technology"
         target="_blank"
         rel="noreferrer"
         className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-mono text-[#9299A6] hover:text-[#FFBD55] bg-[#11151D]/40 hover:bg-[#11151D] border border-[#292E38]/80 hover:border-[#D6A94F]/40 transition-colors"

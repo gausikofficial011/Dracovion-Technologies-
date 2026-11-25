@@ -208,7 +208,7 @@ export const ContactSection: React.FC = () => {
                 </div>
 
                 <a
-                  href="https://github.com/dracovion-technologies"
+                  href="https://github.com/dracovion-technology"
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center gap-4 p-4 rounded-2xl bg-[#11151D] border border-[#292E38] hover:border-[#FFBD55] transition-all group"
@@ -221,7 +221,7 @@ export const ContactSection: React.FC = () => {
                   <div>
                     <div className="text-xs text-[#9299A6] uppercase font-mono tracking-wider">Official GitHub</div>
                     <div className="text-sm font-semibold text-white group-hover:text-[#FFBD55] transition-colors font-mono">
-                      github.com/dracovion-technologies
+                      github.com/dracovion-technology
                     </div>
                   </div>
                 </a>
