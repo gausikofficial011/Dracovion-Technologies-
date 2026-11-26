@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, CallbackError } from 'mongoose';
 import { ServiceCategory } from '../types';
+import { getNextSequenceCode } from '../utils/sequenceGenerator';
 
 /** All valid statuses a ProjectOrder can transition through */
 export type ProjectOrderStatus =
@@ -292,15 +293,15 @@ ProjectOrderSchema.pre('save', async function (next: (err?: CallbackError) => vo
   try {
     const year = new Date().getFullYear();
     const prefix = `DRV-${year}-`;
+    const orderModel = mongoose.model('ProjectOrder');
 
-    // Count how many orders already exist for this calendar year
-    const existingCount = await mongoose.model('ProjectOrder').countDocuments({
-      orderNumber: { $regex: `^${prefix}` },
+    this.orderNumber = await getNextSequenceCode({
+      counterKey: `project_order:${year}`,
+      model: orderModel,
+      field: 'orderNumber',
+      prefix,
+      padWidth: 4,
     });
-
-    // Pad the sequential number to 4 digits (e.g. 0001, 0012, 0123, 1234)
-    const sequentialNumber = String(existingCount + 1).padStart(4, '0');
-    this.orderNumber = `${prefix}${sequentialNumber}`;
 
     return next();
   } catch (err) {

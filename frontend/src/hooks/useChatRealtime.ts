@@ -49,7 +49,9 @@ export async function uploadChatAttachment(file: File, projectId?: string): Prom
 }
 
 /**
- * Subscribes to real-time SSE chat delivery with automatic reconnection and live status tracking.
+ * Subscribes to real-time SSE chat delivery with automatic exponential-backoff reconnection
+ * and live status tracking. Reconnects up to indefinitely on drop (Render free-tier timeouts,
+ * network blips, etc.) so the chat never silently goes dark.
  */
 export function useChatStream(enabled: boolean, onEvent: (payload: ChatStreamPayload) => void) {
   const [isStreamConnected, setIsStreamConnected] = useState(false);
@@ -62,32 +64,57 @@ export function useChatStream(enabled: boolean, onEvent: (payload: ChatStreamPay
       return;
     }
 
-    const streamUrl = resolveApiUrl('/messages/stream');
-    const es = new EventSource(streamUrl, { withCredentials: true });
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryDelay = 1500; // ms, doubles on each failure up to 30 s
+    let destroyed = false;
 
-    const onReady = () => setIsStreamConnected(true);
-    const onMessage = (evt: MessageEvent) => {
-      try {
-        const parsed = JSON.parse(evt.data);
-        if (parsed?.type === 'new_message') {
-          handlerRef.current(parsed as ChatStreamPayload);
+    function connect() {
+      if (destroyed) return;
+
+      const streamUrl = resolveApiUrl('/messages/stream');
+      es = new EventSource(streamUrl, { withCredentials: true });
+
+      const onReady = () => {
+        retryDelay = 1500; // reset backoff on successful connection
+        setIsStreamConnected(true);
+      };
+
+      const onMessage = (evt: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(evt.data);
+          if (parsed?.type === 'new_message') {
+            handlerRef.current(parsed as ChatStreamPayload);
+          }
+        } catch {
+          // Ignore malformed SSE frame
         }
-      } catch {
-        // Ignore malformed frame
-      }
-    };
-    const onError = () => {
-      setIsStreamConnected(false);
-    };
+      };
 
-    es.addEventListener('ready', onReady);
-    es.addEventListener('message', onMessage);
-    es.onerror = onError;
+      const onError = () => {
+        setIsStreamConnected(false);
+        es?.close();
+        es = null;
+
+        if (!destroyed) {
+          reconnectTimer = setTimeout(() => {
+            retryDelay = Math.min(retryDelay * 2, 30000);
+            connect();
+          }, retryDelay);
+        }
+      };
+
+      es.addEventListener('ready', onReady);
+      es.addEventListener('message', onMessage);
+      es.onerror = onError;
+    }
+
+    connect();
 
     return () => {
-      es.removeEventListener('ready', onReady);
-      es.removeEventListener('message', onMessage);
-      es.close();
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      es?.close();
       setIsStreamConnected(false);
     };
   }, [enabled]);

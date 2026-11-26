@@ -149,19 +149,32 @@ export async function createProjectOrder(req: AuthenticatedRequest, res: Respons
           }
         : undefined;
 
-    // Create the project order (pre-save hook generates DRV-YYYY-XXXX order number)
-    const order = await ProjectOrder.create({
-      clientId: client._id,
-      serviceCategory: data.serviceCategory,
-      projectTitle: data.projectTitle,
-      description: data.description,
-      estimatedBudget: data.estimatedBudget,
-      preferredDeadline: data.preferredDeadline,
-      attachmentUrls: data.attachmentUrls,
-      priority: data.priority,
-      status: 'submitted',
-      ...(orderPersonalSnapshot ? { clientPersonalDetails: orderPersonalSnapshot } : {}),
-    });
+    // Create the project order with collision-safe orderNumber retry guard
+    let order: any = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        order = await ProjectOrder.create({
+          clientId: client._id,
+          serviceCategory: data.serviceCategory,
+          projectTitle: data.projectTitle,
+          description: data.description,
+          estimatedBudget: data.estimatedBudget,
+          preferredDeadline: data.preferredDeadline,
+          attachmentUrls: data.attachmentUrls,
+          priority: data.priority,
+          status: 'submitted',
+          ...(orderPersonalSnapshot ? { clientPersonalDetails: orderPersonalSnapshot } : {}),
+        });
+        break;
+      } catch (createErr: any) {
+        const isDuplicateOrderNumber =
+          createErr?.code === 11000 &&
+          (createErr?.keyPattern?.orderNumber || String(createErr?.message || '').includes('orderNumber'));
+        if (!isDuplicateOrderNumber || attempt === 4) {
+          throw createErr;
+        }
+      }
+    }
 
     // 1. Send confirmation email to client
     sendOrderConfirmationEmail(
