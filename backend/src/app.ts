@@ -73,8 +73,17 @@ export function createApp(): express.Application {
     })
   );
 
-  // 3. Compression and Logging
-  app.use(compression());
+  // 3. Compression and Logging (bypass compression for live SSE chat streams so chunks flush immediately)
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.path.includes('/messages/stream') || req.headers.accept === 'text/event-stream') {
+          return false;
+        }
+        return compression.filter(req, res);
+      },
+    })
+  );
   if (env.NODE_ENV !== 'test') {
     app.use(morgan('dev'));
   }
@@ -83,12 +92,18 @@ export function createApp(): express.Application {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // 5. Rate Limiting for Public Protection
+  // 5. Rate Limiting for Public Protection (with dedicated high-burst allowance for real-time chat channels)
+  const isChatEndpoint = (path: string) =>
+    path.startsWith('/v1/messages') ||
+    /^\/v1\/orders\/[^/]+\/messages$/.test(path) ||
+    path === '/v1/auth/me';
+
   const limiter = rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     max: env.NODE_ENV === 'test' ? 10000 : env.RATE_LIMIT_MAX_REQUESTS,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => isChatEndpoint(req.path),
     message: {
       success: false,
       error: {
@@ -98,6 +113,21 @@ export function createApp(): express.Application {
     },
   });
   app.use('/api/', limiter);
+
+  const chatLimiter = rateLimit({
+    windowMs: env.RATE_LIMIT_WINDOW_MS,
+    max: env.NODE_ENV === 'test' ? 20000 : 2400,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      success: false,
+      error: {
+        code: 'CHAT_RATE_LIMIT_EXCEEDED',
+        message: 'Messaging rate threshold reached briefly. Please pause a few seconds and retry.',
+      },
+    },
+  });
+  app.use('/api/v1/messages', chatLimiter);
 
   // 6. Production-Ready Session Management with HTTP-only Cookies
   // Cross-origin production deployments (e.g. Netlify/Vercel -> Render) require sameSite='none' + secure=true.

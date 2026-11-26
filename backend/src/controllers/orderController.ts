@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ProjectOrder, ProjectOrderStatus } from '../models/ProjectOrder';
 import { User } from '../models/User';
 import { Message } from '../models/Message';
+import { FileRecord } from '../models/FileRecord';
 import { AuthenticatedRequest } from '../types';
 import { BadRequestError, NotFoundError, ForbiddenError } from '../utils/errors';
 import {
@@ -12,6 +13,7 @@ import {
   sendOrderStatusUpdateEmail,
 } from '../services/emailService';
 import { recordAuditLog } from '../services/auditService';
+import { publishChatEvent } from '../services/chatEventBus';
 import { env } from '../config/env';
 
 const personalDetailsSchema = z
@@ -370,13 +372,26 @@ export async function assignOrder(req: AuthenticatedRequest, res: Response, next
 
     // Auto-create initial welcoming chat message connecting employee and client directly
     try {
-      await Message.create({
+      const greeting = await Message.create({
         orderId: order._id,
         clientId: (order.clientId as any)._id || order.clientId,
         channelType: 'order',
         senderId: targetEmployee._id,
         content: `Hello! I am ${targetEmployee.fullName} (${targetEmployee.designation || 'Lead Engineer'}). Your project "${order.projectTitle}" (${order.orderNumber}) has been allocated to me after personal details verification. Chat with me directly here or call ${contactPhone}.`,
       });
+      const populatedGreeting = await Message.findById(greeting._id)
+        .populate('senderId', 'fullName role designation avatarUrl phone')
+        .lean();
+      if (populatedGreeting) {
+        publishChatEvent({
+          type: 'new_message',
+          channelType: 'order',
+          orderId: order._id.toString(),
+          clientId: String((order.clientId as any)._id || order.clientId),
+          senderId: targetEmployee._id.toString(),
+          message: populatedGreeting,
+        });
+      }
     } catch {
       // Non-blocking chat greeting
     }
@@ -747,6 +762,7 @@ export async function getOrderMessages(req: AuthenticatedRequest, res: Response,
 
     const messages = await Message.find({ orderId: order._id })
       .populate('senderId', 'fullName role designation avatarUrl phone')
+      .populate('attachments', 'fileKey originalName mimeType sizeBytes')
       .sort({ createdAt: 1 });
 
     res.json({
@@ -761,12 +777,35 @@ export async function getOrderMessages(req: AuthenticatedRequest, res: Response,
 
 /**
  * POST /api/v1/orders/:id/messages
- * Send direct chat message between client and assigned employee.
+ * Send direct chat message (and optional shared attachments) between client and assigned employee.
  */
 export async function sendOrderMessage(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
-    const { content } = z.object({ content: z.string().min(1, 'Message cannot be empty').trim() }).parse(req.body);
+    const { content, attachments } = z
+      .object({
+        content: z.string().trim().max(5000).optional().default(''),
+        attachments: z.array(z.string()).max(5).optional().default([]),
+      })
+      .parse(req.body);
+
+    const attachmentIds = attachments.map((attId) => {
+      if (!mongoose.Types.ObjectId.isValid(attId)) {
+        throw new BadRequestError('Invalid attachment identifier.');
+      }
+      return new mongoose.Types.ObjectId(attId);
+    });
+
+    if (!content && attachmentIds.length === 0) {
+      throw new BadRequestError('Message content or an attachment is required.');
+    }
+
+    if (attachmentIds.length > 0) {
+      const count = await FileRecord.countDocuments({ _id: { $in: attachmentIds } });
+      if (count !== attachmentIds.length) {
+        throw new BadRequestError('One or more attached files could not be found.');
+      }
+    }
 
     const order = await ProjectOrder.findOne({
       $or: [{ _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }, { orderNumber: id }],
@@ -783,11 +822,25 @@ export async function sendOrderMessage(req: AuthenticatedRequest, res: Response,
       clientId: order.clientId,
       senderId: req.user?.userId,
       channelType: 'order',
-      content,
+      content: content || 'Shared attachment',
+      attachments: attachmentIds,
       readBy: [{ userId: req.user?.userId, readAt: new Date() }],
     });
 
-    const populated = await Message.findById(message._id).populate('senderId', 'fullName role designation phone');
+    const populated = await Message.findById(message._id)
+      .populate('senderId', 'fullName role designation phone avatarUrl')
+      .populate('attachments', 'fileKey originalName mimeType sizeBytes')
+      .lean();
+
+    publishChatEvent({
+      type: 'new_message',
+      channelType: 'order',
+      orderId: order._id.toString(),
+      clientId: order.clientId.toString(),
+      senderId: String(req.user?.userId || ''),
+      recipientUserIds: order.assignedEmployeeId ? [order.assignedEmployeeId.toString()] : [],
+      message: populated,
+    });
 
     res.status(201).json({
       success: true,

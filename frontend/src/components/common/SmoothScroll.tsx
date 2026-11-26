@@ -23,6 +23,20 @@ export const SmoothScroll: React.FC<SmoothScrollProps> = ({ children }) => {
       smoothWheel: true,
       wheelMultiplier: 0.9,
       touchMultiplier: 1.5,
+      prevent: (node) => {
+        let el: HTMLElement | null =
+          node instanceof HTMLElement ? node : ((node as Node)?.parentElement ?? null);
+        while (el && el !== document.body && el !== document.documentElement) {
+          if (el.hasAttribute('data-lenis-prevent')) return true;
+          const style = window.getComputedStyle(el);
+          const overflowY = style.overflowY;
+          if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+            return true;
+          }
+          el = el.parentElement;
+        }
+        return false;
+      },
     });
 
     lenisRef.current = lenis;

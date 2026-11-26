@@ -496,4 +496,111 @@ describe('Dracovion Technologies Backend Integration & Security Tests', () => {
       expect(res.body.error.message).toContain('Google Sign-In');
     });
   });
+
+  describe('Direct Messaging & Chat Channels', () => {
+    it('Client can send direct support messages and Admin/Owner can list threads, read, clear unreads, and reply', async () => {
+      const clientAgent = request.agent(app);
+      const ownerAgent = request.agent(app);
+      const clientEmail = `chat_client_${Date.now()}@example.com`;
+
+      const regRes = await clientAgent.post('/api/v1/auth/register').send({
+        email: clientEmail,
+        password: 'ChatPassword2026!',
+        fullName: 'Chat Channel Tester',
+        role: 'client',
+      });
+      expect(regRes.status).toBe(201);
+      const clientId = regRes.body.user.id;
+
+      // Client sees active support channel and sends message
+      const channelsRes = await clientAgent.get('/api/v1/messages/channels');
+      expect(channelsRes.status).toBe(200);
+      expect(channelsRes.body.channels.support.id).toBe('support');
+
+      const sendClientRes = await clientAgent.post('/api/v1/messages/direct').send({
+        content: 'Hello leadership team, checking the live direct chat channel.',
+      });
+      expect(sendClientRes.status).toBe(201);
+      expect(sendClientRes.body.message.content).toContain('live direct chat channel');
+
+      const clientHistoryRes = await clientAgent.get('/api/v1/messages/direct');
+      expect(clientHistoryRes.status).toBe(200);
+      expect(clientHistoryRes.body.messages.length).toBe(1);
+
+      // Owner logs in and views conversation threads with unread count
+      const ownerLogin = await ownerAgent.post('/api/v1/auth/login').send({
+        email: 'president@dracovion.com',
+        password: 'DracovionPresident2026!',
+      });
+      expect(ownerLogin.status).toBe(200);
+
+      const convRes = await ownerAgent.get('/api/v1/messages/admin/conversations');
+      expect(convRes.status).toBe(200);
+      const targetConv = convRes.body.conversations.find((c: any) => String(c.client._id) === String(clientId));
+      expect(targetConv).toBeDefined();
+      expect(targetConv.messageCount).toBe(1);
+      expect(targetConv.unreadCount).toBe(1);
+
+      // Owner opens client thread (marks read) and dispatches reply
+      const adminThreadRes = await ownerAgent.get(`/api/v1/messages/admin/client/${clientId}`);
+      expect(adminThreadRes.status).toBe(200);
+      expect(adminThreadRes.body.messages.length).toBe(1);
+
+      const sendReplyRes = await ownerAgent.post(`/api/v1/messages/admin/client/${clientId}`).send({
+        content: 'Received cleanly! Direct engineering support line is active.',
+      });
+      expect(sendReplyRes.status).toBe(201);
+      expect(sendReplyRes.body.message.content).toContain('engineering support line is active');
+
+      // Client polls direct channel and receives executive reply
+      const afterReplyClientRes = await clientAgent.get('/api/v1/messages/direct');
+      expect(afterReplyClientRes.status).toBe(200);
+      expect(afterReplyClientRes.body.messages.length).toBe(2);
+      expect(afterReplyClientRes.body.messages[1].content).toContain('engineering support line is active');
+
+      // Invalid client identifier returns clean 400 rather than CastError 500
+      const badClientRes = await ownerAgent.get('/api/v1/messages/admin/client/not-an-object-id');
+      expect(badClientRes.status).toBe(400);
+
+      // Admin can inspect client's channels (Direct Support + any Order/Project threads)
+      const adminClientChannelsRes = await ownerAgent.get(`/api/v1/messages/admin/client/${clientId}/channels`);
+      expect(adminClientChannelsRes.status).toBe(200);
+      expect(adminClientChannelsRes.body.channels.support.messageCount).toBeGreaterThanOrEqual(2);
+
+      // Client uploads a file attachment & shares it in direct chat; owner can download, stranger gets 403
+      const uploadRes = await clientAgent
+        .post('/api/v1/files/upload')
+        .attach('file', Buffer.from('dracovion-architecture-spec-v1'), 'architecture-spec.txt');
+      expect(uploadRes.status).toBe(201);
+      const uploadedFile = uploadRes.body.file;
+
+      const sendWithAttachmentRes = await clientAgent.post('/api/v1/messages/direct').send({
+        content: '',
+        attachments: [uploadedFile._id],
+      });
+      expect(sendWithAttachmentRes.status).toBe(201);
+      expect(sendWithAttachmentRes.body.message.attachments.length).toBe(1);
+      expect(sendWithAttachmentRes.body.message.attachments[0].fileKey).toBe(uploadedFile.fileKey);
+
+      const ownerDownloadRes = await ownerAgent.get(`/api/v1/files/${uploadedFile.fileKey}/download`);
+      expect(ownerDownloadRes.status).toBe(200);
+
+      // Empty message without attachments is rejected cleanly with 400
+      const emptyMsgRes = await clientAgent.post('/api/v1/messages/direct').send({ content: '   ' });
+      expect(emptyMsgRes.status).toBe(400);
+
+      // Unrelated third-party client cannot access another client's uploaded chat attachment or admin chat endpoints
+      const outsiderAgent = request.agent(app);
+      await outsiderAgent.post('/api/v1/auth/register').send({
+        email: `outsider_${Date.now()}@example.com`,
+        password: 'OutsiderPass2026!',
+        fullName: 'Outsider Account',
+        role: 'client',
+      });
+      const outsiderDownload = await outsiderAgent.get(`/api/v1/files/${uploadedFile.fileKey}/download`);
+      expect(outsiderDownload.status).toBe(403);
+      const outsiderAdminAccess = await outsiderAgent.get('/api/v1/messages/admin/conversations');
+      expect(outsiderAdminAccess.status).toBe(403);
+    });
+  });
 });

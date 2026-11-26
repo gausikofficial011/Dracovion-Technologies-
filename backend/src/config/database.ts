@@ -19,8 +19,9 @@ function isDnsResolutionError(err: unknown): boolean {
 
 export async function connectDatabase(): Promise<typeof mongoose> {
   const uri = (env.MONGODB_URI || '').trim().replace(/^["']|["']$/g, '');
+  const useUriInCurrentEnv = env.NODE_ENV !== 'test' || process.env.USE_LIVE_DB_FOR_TESTS === 'true';
 
-  if (uri !== '') {
+  if (uri !== '' && useUriInCurrentEnv) {
     try {
       logger.info('Attempting connection to MongoDB Atlas...', { uri: uri.replace(/:[^:]*@/, ':****@') });
       const conn = await mongoose.connect(uri, {

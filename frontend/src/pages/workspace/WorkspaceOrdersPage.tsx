@@ -1,9 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 import { getMissingPersonalDetails } from '../../utils/orderGovernance';
+import {
+  type ChatAttachmentFile,
+  mergeMessagesById,
+  uploadChatAttachment,
+  useChatStream,
+} from '../../hooks/useChatRealtime';
+import { MessageAttachmentsList, StagedAttachmentsBar } from '../../components/chat/ChatAttachments';
 import {
   Layers,
   Search,
@@ -32,6 +39,7 @@ import {
   IndianRupee,
   QrCode,
   UserCheck,
+  Paperclip,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -65,6 +73,12 @@ export const WorkspaceOrdersPage: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [newChatMessage, setNewChatMessage] = useState('');
   const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
+  const [stagedChatAttachments, setStagedChatAttachments] = useState<ChatAttachmentFile[]>([]);
+  const [isUploadingChatFile, setIsUploadingChatFile] = useState(false);
+  const [chatModalError, setChatModalError] = useState<string | null>(null);
+  const chatFeedRef = useRef<HTMLDivElement>(null);
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const lastChatScrollRef = useRef<string>('');
 
   // Share Employee Payment Details Modal
   const [paymentShareOrder, setPaymentShareOrder] = useState<any>(null);
@@ -169,7 +183,13 @@ export const WorkspaceOrdersPage: React.FC = () => {
     }
   };
 
-  // Live 5s polling inside open Direct Chat drawer
+  const { isStreamConnected: isChatStreamLive } = useChatStream(Boolean(user && chatModalOrder?._id), (evt) => {
+    if (evt?.channelType === 'order' && String(evt.orderId) === String(chatModalOrder?._id) && evt.message) {
+      setChatMessages((prev) => mergeMessagesById(prev, [evt.message]));
+    }
+  });
+
+  // Live fallback polling inside open Direct Chat drawer
   useEffect(() => {
     if (!chatModalOrder?._id) return;
     const targetOrderId = chatModalOrder._id;
@@ -179,14 +199,42 @@ export const WorkspaceOrdersPage: React.FC = () => {
           `/orders/${targetOrderId}/messages`
         );
         if (Array.isArray(res?.messages)) {
-          setChatMessages(res.messages);
+          setChatMessages((prev) => mergeMessagesById(prev, res.messages));
         }
       } catch {
         // Keep drawer active on transient polling errors
       }
-    }, 5000);
+    }, isChatStreamLive ? 8000 : 2500);
     return () => clearInterval(interval);
-  }, [chatModalOrder?._id]);
+  }, [chatModalOrder?._id, isChatStreamLive]);
+
+  useEffect(() => {
+    const key = `${chatModalOrder?._id || ''}:${chatMessages.length}:${chatMessages[chatMessages.length - 1]?._id || ''}`;
+    if (lastChatScrollRef.current !== key) {
+      lastChatScrollRef.current = key;
+      if (chatFeedRef.current) {
+        chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
+      }
+    }
+  }, [chatModalOrder?._id, chatMessages]);
+
+  const handleChatModalFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    setIsUploadingChatFile(true);
+    setChatModalError(null);
+    try {
+      const uploaded: ChatAttachmentFile[] = [];
+      for (const file of list.slice(0, 5 - stagedChatAttachments.length)) {
+        uploaded.push(await uploadChatAttachment(file));
+      }
+      setStagedChatAttachments((prev) => [...prev, ...uploaded]);
+    } catch (err: any) {
+      setChatModalError(err?.message || 'Failed to upload file attachment.');
+    } finally {
+      setIsUploadingChatFile(false);
+    }
+  };
 
   const openSharePaymentModal = (order: any) => {
     setSharePaymentError(null);
@@ -255,17 +303,20 @@ export const WorkspaceOrdersPage: React.FC = () => {
 
   const handleSendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChatMessage.trim() || !chatModalOrder) return;
+    if ((!newChatMessage.trim() && stagedChatAttachments.length === 0) || !chatModalOrder || isSendingChatMessage) return;
 
     setIsSendingChatMessage(true);
+    setChatModalError(null);
     try {
       const res = await api.post<{ success: boolean; message: any }>(`/orders/${chatModalOrder._id}/messages`, {
         content: newChatMessage.trim(),
+        attachments: stagedChatAttachments.map((a) => a._id),
       });
-      setChatMessages((prev) => [...prev, res.message]);
+      setChatMessages((prev) => mergeMessagesById(prev, [res.message]));
       setNewChatMessage('');
+      setStagedChatAttachments([]);
     } catch (err: any) {
-      alert(err.message || 'Failed to send message.');
+      setChatModalError(err.message || 'Failed to send message.');
     } finally {
       setIsSendingChatMessage(false);
     }
@@ -937,71 +988,115 @@ export const WorkspaceOrdersPage: React.FC = () => {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-xl rounded-3xl bg-[#080A0E] border-[1.5px] border-[#52D69A] p-6 space-y-4 shadow-2xl relative flex flex-col h-[600px] justify-between"
+              className="w-full max-w-xl rounded-3xl bg-[#080A0E] border-[1.5px] border-[#52D69A] p-6 space-y-4 shadow-2xl relative flex flex-col h-[600px] max-h-[85dvh] min-h-0 overflow-hidden"
             >
-              <div>
-                <div className="flex items-center justify-between border-b border-[#292E38] pb-3">
-                  <div>
-                    <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold">
-                      SECURE CLIENT CHANNEL
-                    </span>
-                    <h3 className="text-base font-bold font-display text-white">
-                      Chat: {chatModalOrder.projectTitle} ({chatModalOrder.orderNumber})
-                    </h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setChatModalOrder(null)}
-                    className="p-1 rounded-lg text-[#9299A6] hover:text-white"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+              <div className="flex items-center justify-between border-b border-[#292E38] pb-3 shrink-0">
+                <div>
+                  <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold">
+                    SECURE CLIENT CHANNEL
+                  </span>
+                  <h3 className="text-base font-bold font-display text-white">
+                    Chat: {chatModalOrder.projectTitle} ({chatModalOrder.orderNumber})
+                  </h3>
                 </div>
-
-                {/* Messages stream */}
-                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1 pt-3">
-                  {chatMessages.length === 0 ? (
-                    <div className="py-16 text-center text-xs text-[#9299A6]">
-                      No messages recorded yet. Start the conversation with the client below.
-                    </div>
-                  ) : (
-                    chatMessages.map((msg: any) => {
-                      const isMe = msg.senderId?._id === user?.id || msg.senderId === user?.id;
-                      return (
-                        <div
-                          key={msg._id}
-                          className={`p-3 rounded-2xl text-xs space-y-1 max-w-[85%] ${
-                            isMe
-                              ? 'ml-auto bg-[#11151D] border border-emerald-500/40 text-white'
-                              : 'mr-auto bg-[#0A0D13] border border-[#292E38] text-slate-200'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-4 font-mono text-[10px] text-[#9299A6]">
-                            <span className="font-bold text-[#FFBD55]">
-                              {msg.senderId?.fullName || 'User'} ({msg.senderId?.role || 'User'})
-                            </span>
-                            <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                          <p className="leading-relaxed">{msg.content}</p>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setChatModalOrder(null)}
+                  className="p-1 rounded-lg text-[#9299A6] hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
+              {/* Messages stream */}
+              {chatModalError && (
+                <div className="p-2.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-[11px] text-rose-200 flex items-center justify-between shrink-0">
+                  <span>{chatModalError}</span>
+                  <button type="button" onClick={() => setChatModalError(null)} className="text-[10px] font-mono uppercase cursor-pointer">
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              <div ref={chatFeedRef} data-lenis-prevent className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-1 pt-1">
+                {chatMessages.length === 0 ? (
+                  <div className="py-16 text-center text-xs text-[#9299A6]">
+                    No messages recorded yet. Start the conversation with the client below.
+                  </div>
+                ) : (
+                  chatMessages.map((msg: any) => {
+                    const senderId = String(msg.senderId?._id || msg.senderId || '');
+                    const currentUserId = String(user?.id || (user as any)?._id || '');
+                    const isMe = Boolean(currentUserId && senderId === currentUserId);
+                    return (
+                      <div
+                        key={msg._id}
+                        className={`p-3 rounded-2xl text-xs space-y-1 max-w-[85%] ${
+                          isMe
+                            ? 'ml-auto bg-[#11151D] border border-emerald-500/40 text-white'
+                            : 'mr-auto bg-[#0A0D13] border border-[#292E38] text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-4 font-mono text-[10px] text-[#9299A6]">
+                          <span className="font-bold text-[#FFBD55]">
+                            {msg.senderId?.fullName || 'User'} ({msg.senderId?.role || 'User'})
+                          </span>
+                          <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        {msg.content && <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>}
+                        <MessageAttachmentsList attachments={msg.attachments} />
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <StagedAttachmentsBar
+                files={stagedChatAttachments}
+                onRemove={(attId) => setStagedChatAttachments((prev) => prev.filter((f) => f._id !== attId))}
+              />
+
               {/* Chat Composer */}
-              <form onSubmit={handleSendChatMessage} className="pt-2 border-t border-[#292E38] flex gap-2">
+              <form onSubmit={handleSendChatMessage} className="pt-2 border-t border-[#292E38] flex gap-2 shrink-0">
+                <input
+                  ref={chatFileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) handleChatModalFiles(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => chatFileInputRef.current?.click()}
+                  disabled={isUploadingChatFile || stagedChatAttachments.length >= 5}
+                  title="Attach file or paste screenshot"
+                  className="px-3 py-2.5 rounded-xl bg-[#11151D] border border-[#292E38] hover:border-emerald-500/60 text-[#9299A6] hover:text-emerald-300 disabled:opacity-40 cursor-pointer flex items-center justify-center shrink-0"
+                >
+                  {isUploadingChatFile ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                  ) : (
+                    <Paperclip className="w-3.5 h-3.5" />
+                  )}
+                </button>
                 <input
                   type="text"
                   value={newChatMessage}
                   onChange={(e) => setNewChatMessage(e.target.value)}
-                  placeholder="Type direct response to client..."
+                  onPaste={(e) => {
+                    if (e.clipboardData?.files?.length) {
+                      e.preventDefault();
+                      handleChatModalFiles(e.clipboardData.files);
+                    }
+                  }}
+                  placeholder="Type direct response or paste screenshot..."
                   className="flex-1 px-4 py-2.5 rounded-xl bg-[#11151D] border border-[#292E38] text-white text-xs focus:border-emerald-500 focus:outline-none"
                 />
                 <button
                   type="submit"
-                  disabled={isSendingChatMessage || !newChatMessage.trim()}
+                  disabled={isSendingChatMessage || isUploadingChatFile || (!newChatMessage.trim() && stagedChatAttachments.length === 0)}
                   className="px-5 py-2.5 rounded-xl text-xs font-bold text-[#050609] transition-transform hover:scale-105 disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
                   style={{
                     background: 'linear-gradient(90deg, #52D69A 0%, #25D366 100%)',

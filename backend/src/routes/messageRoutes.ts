@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import {
+  streamChatEvents,
   getClientChannels,
   getClientDirectMessages,
   sendClientDirectMessage,
   getAdminConversations,
+  getAdminClientChannels,
   getAdminClientMessages,
   sendAdminDirectMessage,
   getProjectMessages,
@@ -14,6 +16,9 @@ import {
 import { requireAuth, requireRoles } from '../middlewares/auth';
 
 const router = Router();
+
+// Real-time Server-Sent Events (SSE) stream for instant message delivery
+router.get('/stream', requireAuth, streamChatEvents);
 
 // Client Channel discovery & Direct Support line
 router.get('/channels', requireAuth, getClientChannels);
@@ -26,6 +31,12 @@ router.get(
   requireAuth,
   requireRoles('owner', 'admin', 'ceo', 'super_admin'),
   getAdminConversations
+);
+router.get(
+  '/admin/client/:clientId/channels',
+  requireAuth,
+  requireRoles('owner', 'admin', 'ceo', 'super_admin'),
+  getAdminClientChannels
 );
 router.get(
   '/admin/client/:clientId',

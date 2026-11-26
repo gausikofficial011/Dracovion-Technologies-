@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, resolveApiUrl } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
@@ -24,8 +24,16 @@ import {
   Loader2,
   Sparkles,
   ExternalLink,
+  Paperclip,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  type ChatAttachmentFile,
+  mergeMessagesById,
+  uploadChatAttachment,
+  useChatStream,
+} from '../../hooks/useChatRealtime';
+import { MessageAttachmentsList, StagedAttachmentsBar } from '../../components/chat/ChatAttachments';
 
 const TIMELINE_STEPS = [
   { key: 'submitted', label: 'Order Submitted' },
@@ -62,6 +70,12 @@ export const OrderDetailPage: React.FC = () => {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [stagedAttachments, setStagedAttachments] = useState<ChatAttachmentFile[]>([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatFeedRef = useRef<HTMLDivElement>(null);
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const lastScrolledMsgRef = useRef<string>('');
 
   // Governance: Personal details + direct employee payment settlement state
   const [govFullName, setGovFullName] = useState('');
@@ -234,19 +248,56 @@ export const OrderDetailPage: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    const key = `${order?._id || ''}:${messages.length}:${messages[messages.length - 1]?._id || ''}`;
+    if (lastScrolledMsgRef.current !== key) {
+      lastScrolledMsgRef.current = key;
+      if (chatFeedRef.current) {
+        chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
+      }
+    }
+  }, [order?._id, messages]);
+
+  const { isStreamConnected: isChatStreamLive } = useChatStream(Boolean(user && order?._id), (evt) => {
+    if (evt?.channelType === 'order' && String(evt.orderId) === String(order?._id) && evt.message) {
+      setMessages((prev) => mergeMessagesById(prev, [evt.message]));
+    }
+  });
+
+  const handleChatFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    setIsUploadingAttachment(true);
+    setChatError(null);
+    try {
+      const uploaded: ChatAttachmentFile[] = [];
+      for (const file of list.slice(0, 5 - stagedAttachments.length)) {
+        uploaded.push(await uploadChatAttachment(file));
+      }
+      setStagedAttachments((prev) => [...prev, ...uploaded]);
+    } catch (err: any) {
+      setChatError(err?.message || 'Failed to upload attachment.');
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !order) return;
+    if ((!newMessage.trim() && stagedAttachments.length === 0) || !order || isSendingMessage) return;
 
     setIsSendingMessage(true);
+    setChatError(null);
     try {
       const res = await api.post<{ success: boolean; message: any }>(`/orders/${order._id}/messages`, {
         content: newMessage.trim(),
+        attachments: stagedAttachments.map((a) => a._id),
       });
-      setMessages((prev) => [...prev, res.message]);
+      setMessages((prev) => mergeMessagesById(prev, [res.message]));
       setNewMessage('');
+      setStagedAttachments([]);
     } catch (err: any) {
-      alert(err.message || 'Failed to send message.');
+      setChatError(err.message || 'Failed to send message.');
     } finally {
       setIsSendingMessage(false);
     }
@@ -936,20 +987,32 @@ export const OrderDetailPage: React.FC = () => {
               <MessageSquare className="w-4 h-4 text-[#78BFFF]" />
               <span>Direct Chat with Assigned Lead Engineer</span>
             </h2>
-            <span className="text-xs font-mono text-[#9299A6]">
-              {messages.length} Messages
+            <span className="text-xs font-mono text-[#9299A6] inline-flex items-center gap-2">
+              <span className={`w-1.5 h-1.5 rounded-full ${isChatStreamLive ? 'bg-[#52D69A] animate-pulse' : 'bg-[#FFBD55]'}`} />
+              <span>{messages.length} Messages</span>
             </span>
           </div>
 
+          {chatError && (
+            <div className="p-2.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-2">
+              <span>{chatError}</span>
+              <button type="button" onClick={() => setChatError(null)} className="text-[10px] font-mono uppercase cursor-pointer">
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Messages Area */}
-          <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+          <div ref={chatFeedRef} data-lenis-prevent className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
             {messages.length === 0 ? (
               <div className="py-10 text-center text-xs text-[#9299A6]">
-                No messages yet. Send a note to your assigned lead engineer below.
+                No messages yet. Send a note or attach a file/screenshot to your assigned lead engineer below.
               </div>
             ) : (
               messages.map((msg: any) => {
-                const isMyMessage = msg.senderId?._id === user?.id || msg.senderId === user?.id;
+                const senderId = String(msg.senderId?._id || msg.senderId || '');
+                const currentUserId = String(user?.id || (user as any)?._id || '');
+                const isMyMessage = Boolean(currentUserId && senderId === currentUserId);
                 return (
                   <div
                     key={msg._id}
@@ -965,25 +1028,60 @@ export const OrderDetailPage: React.FC = () => {
                       </span>
                       <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <p className="text-[#E7E9EE] leading-relaxed">{msg.content}</p>
+                    {msg.content && <p className="text-[#E7E9EE] leading-relaxed whitespace-pre-wrap">{msg.content}</p>}
+                    <MessageAttachmentsList attachments={msg.attachments} />
                   </div>
                 );
               })
             )}
           </div>
 
+          <StagedAttachmentsBar
+            files={stagedAttachments}
+            onRemove={(attId) => setStagedAttachments((prev) => prev.filter((f) => f._id !== attId))}
+          />
+
           {/* Message Composer */}
           <form onSubmit={handleSendMessage} className="pt-2 border-t border-[#292E38] flex gap-2">
+            <input
+              ref={chatFileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) handleChatFiles(e.target.files);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => chatFileInputRef.current?.click()}
+              disabled={isUploadingAttachment || stagedAttachments.length >= 5}
+              title="Attach file or paste screenshot"
+              className="px-3 py-2.5 rounded-xl bg-[#11151D] border border-[#292E38] hover:border-[#D6A94F] text-[#9299A6] hover:text-[#FFBD55] disabled:opacity-40 cursor-pointer flex items-center justify-center shrink-0"
+            >
+              {isUploadingAttachment ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FFBD55]" />
+              ) : (
+                <Paperclip className="w-3.5 h-3.5" />
+              )}
+            </button>
             <input
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type your message to the lead engineer..."
+              onPaste={(e) => {
+                if (e.clipboardData?.files?.length) {
+                  e.preventDefault();
+                  handleChatFiles(e.clipboardData.files);
+                }
+              }}
+              placeholder="Type your message or paste a screenshot..."
               className="flex-1 px-4 py-2.5 rounded-xl bg-[#11151D] border border-[#292E38] text-white text-xs placeholder:text-[#9299A6] focus:border-[#FFBD55] focus:outline-none"
             />
             <button
               type="submit"
-              disabled={isSendingMessage || !newMessage.trim()}
+              disabled={isSendingMessage || isUploadingAttachment || (!newMessage.trim() && stagedAttachments.length === 0)}
               className="px-5 py-2.5 rounded-xl text-xs font-bold text-[#050609] transition-transform hover:scale-105 disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
               style={{
                 background: 'linear-gradient(90deg, #D6A94F 0%, #FFBD55 100%)',

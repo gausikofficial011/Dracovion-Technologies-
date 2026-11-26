@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, resolveApiUrl } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import {
   ChevronLeft,
@@ -19,15 +20,31 @@ import {
   Phone,
   QrCode,
   ExternalLink,
+  Paperclip,
+  Loader2,
 } from 'lucide-react';
+import {
+  type ChatAttachmentFile,
+  mergeMessagesById,
+  uploadChatAttachment,
+  useChatStream,
+} from '../../hooks/useChatRealtime';
+import { MessageAttachmentsList, StagedAttachmentsBar } from '../../components/chat/ChatAttachments';
 
 export const ClientProjectDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [project, setProject] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [stagedAttachments, setStagedAttachments] = useState<ChatAttachmentFile[]>([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const feedRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastScrolledRef = useRef<string>('');
 
   const loadData = () => {
     setIsLoading(true);
@@ -47,19 +64,69 @@ export const ClientProjectDetailPage: React.FC = () => {
     loadData();
   }, [id]);
 
+  const { isStreamConnected } = useChatStream(Boolean(user && id), (evt) => {
+    if (evt?.channelType === 'project' && String(evt.projectId) === String(id) && evt.message) {
+      setMessages(prev => mergeMessagesById(prev, [evt.message]));
+    }
+  });
+
+  useEffect(() => {
+    if (!id) return;
+    const timer = setInterval(() => {
+      api
+        .get<{ success: boolean; messages: any[] }>(`/messages/project/${id}`)
+        .then(res => {
+          if (Array.isArray(res?.messages)) setMessages(prev => mergeMessagesById(prev, res.messages));
+        })
+        .catch(() => {});
+    }, isStreamConnected ? 8000 : 3000);
+    return () => clearInterval(timer);
+  }, [id, isStreamConnected]);
+
+  useEffect(() => {
+    const key = `${id || ''}:${messages.length}:${messages[messages.length - 1]?._id || ''}`;
+    if (lastScrolledRef.current !== key) {
+      lastScrolledRef.current = key;
+      if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [id, messages]);
+
+  const handleFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    setIsUploadingAttachment(true);
+    setChatError(null);
+    try {
+      const uploaded: ChatAttachmentFile[] = [];
+      for (const file of list.slice(0, 5 - stagedAttachments.length)) {
+        uploaded.push(await uploadChatAttachment(file, id));
+      }
+      setStagedAttachments(prev => [...prev, ...uploaded]);
+    } catch (err: any) {
+      setChatError(err?.message || 'Failed to upload attachment.');
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if ((!newMessage.trim() && stagedAttachments.length === 0) || isSending) return;
     setIsSending(true);
+    setChatError(null);
     try {
       const res = await api.post<{ success: boolean; message: any }>(
         `/messages/project/${id}`,
-        { content: newMessage }
+        {
+          content: newMessage.trim(),
+          attachments: stagedAttachments.map(a => a._id),
+        }
       );
-      setMessages([...messages, res.message]);
+      setMessages(prev => mergeMessagesById(prev, [res.message]));
       setNewMessage('');
+      setStagedAttachments([]);
     } catch (err: any) {
-      alert(err.message || 'Failed to send message.');
+      setChatError(err.message || 'Failed to send message.');
     } finally {
       setIsSending(false);
     }
@@ -239,52 +306,94 @@ export const ClientProjectDetailPage: React.FC = () => {
         </div>
 
         {/* Right Column: Project Discussion Chat */}
-        <div className="p-6 rounded-3xl bg-[#080A0E] border border-[#292E38] shadow-2xl flex flex-col h-[650px] justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-4 border-b border-[#292E38] mb-4">
-              <h3 className="text-base font-bold text-white font-display flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-[#FFBD55]" />
-                <span>Project Discussion</span>
-              </h3>
-              <span className="text-[11px] font-mono text-[#9299A6]">
-                {messages.length} Messages
-              </span>
-            </div>
-
-            {/* Messages Scroll Area */}
-            <div className="space-y-3 overflow-y-auto max-h-[460px] pr-1">
-              {messages.length === 0 ? (
-                <div className="py-12 text-center text-xs text-[#9299A6]">
-                  No messages yet. Send a note to the engineering team.
-                </div>
-              ) : (
-                messages.map((msg: any) => (
-                  <div key={msg._id} className="p-3 rounded-xl bg-[#11151D] border border-[#292E38] text-xs space-y-1">
-                    <div className="flex items-center justify-between font-mono text-[10px] text-[#9299A6]">
-                      <span className="font-bold text-[#FFBD55]">
-                        {msg.senderId?.fullName || 'Participant'}
-                      </span>
-                      <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <p className="text-[#E7E9EE] leading-relaxed">{msg.content}</p>
-                  </div>
-                ))
-              )}
-            </div>
+        <div className="p-6 rounded-3xl bg-[#080A0E] border border-[#292E38] shadow-2xl flex flex-col h-[560px] max-h-[80dvh] min-h-0 justify-between overflow-hidden">
+          <div className="flex items-center justify-between pb-4 border-b border-[#292E38] mb-3 shrink-0">
+            <h3 className="text-base font-bold text-white font-display flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-[#FFBD55]" />
+              <span>Project Discussion</span>
+            </h3>
+            <span className="text-[11px] font-mono text-[#9299A6]">
+              {messages.length} Messages
+            </span>
           </div>
 
+          {/* Messages Scroll Area */}
+          <div ref={feedRef} data-lenis-prevent className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-1 mb-3">
+            {messages.length === 0 ? (
+              <div className="py-12 text-center text-xs text-[#9299A6]">
+                No messages yet. Send a note or screenshot to the engineering team.
+              </div>
+            ) : (
+              messages.map((msg: any) => (
+                <div key={msg._id} className="p-3 rounded-xl bg-[#11151D] border border-[#292E38] text-xs space-y-1">
+                  <div className="flex items-center justify-between font-mono text-[10px] text-[#9299A6]">
+                    <span className="font-bold text-[#FFBD55]">
+                      {msg.senderId?.fullName || 'Participant'}
+                    </span>
+                    <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  {msg.content && <p className="text-[#E7E9EE] leading-relaxed whitespace-pre-wrap">{msg.content}</p>}
+                  <MessageAttachmentsList attachments={msg.attachments} />
+                </div>
+              ))
+            )}
+          </div>
+
+          {chatError && (
+            <div className="mb-2 p-2 rounded-lg bg-rose-950/50 border border-rose-500/40 text-[11px] text-rose-200 flex items-center justify-between">
+              <span>{chatError}</span>
+              <button type="button" onClick={() => setChatError(null)} className="text-[10px] font-mono uppercase cursor-pointer">
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <StagedAttachmentsBar
+            files={stagedAttachments}
+            onRemove={(attId) => setStagedAttachments(prev => prev.filter(f => f._id !== attId))}
+          />
+
           {/* Message Composer */}
-          <form onSubmit={handleSendMessage} className="pt-3 border-t border-[#292E38] flex gap-2">
+          <form onSubmit={handleSendMessage} className="pt-3 border-t border-[#292E38] flex gap-2 shrink-0">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={e => {
+                if (e.target.files) handleFiles(e.target.files);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingAttachment || stagedAttachments.length >= 5}
+              title="Attach file or paste screenshot"
+              className="p-2.5 rounded-xl bg-[#11151D] border border-[#292E38] hover:border-[#D6A94F] text-[#9299A6] hover:text-[#FFBD55] disabled:opacity-40 cursor-pointer shrink-0"
+            >
+              {isUploadingAttachment ? (
+                <Loader2 className="w-4 h-4 animate-spin text-[#FFBD55]" />
+              ) : (
+                <Paperclip className="w-4 h-4" />
+              )}
+            </button>
             <input
               type="text"
               value={newMessage}
               onChange={e => setNewMessage(e.target.value)}
-              placeholder="Type message to engineering team..."
+              onPaste={e => {
+                if (e.clipboardData?.files?.length) {
+                  e.preventDefault();
+                  handleFiles(e.clipboardData.files);
+                }
+              }}
+              placeholder="Type message or paste screenshot..."
               className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#11151D] border border-[#292E38] text-white placeholder-[#9299A6] focus:outline-none focus:border-[#D6A94F] text-xs"
             />
             <button
               type="submit"
-              disabled={isSending || !newMessage.trim()}
+              disabled={isSending || isUploadingAttachment || (!newMessage.trim() && stagedAttachments.length === 0)}
               className="p-2.5 rounded-xl text-[#050609] shadow-[0_0_15px_rgba(214,169,79,0.35)] hover:shadow-[0_0_25px_rgba(255,189,85,0.5)] disabled:opacity-40 transition-all cursor-pointer"
               style={{
                 background: 'linear-gradient(90deg, #D6A94F 0%, #FFBD55 100%)',

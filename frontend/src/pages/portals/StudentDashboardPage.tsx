@@ -9,6 +9,7 @@ import {
   Video,
   ArrowRight,
   Loader2,
+  MessageSquare,
 } from 'lucide-react';
 import { DragonEmblem } from '../../components/ui/DragonLogo';
 
@@ -46,6 +47,15 @@ export const StudentDashboardPage: React.FC = () => {
         <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed relative z-10">
           Welcome, {user?.fullName}. Track your capstone prototype development, access mentoring resources, and prepare for viva examinations with senior engineering support.
         </p>
+        <div className="pt-1 relative z-10 flex flex-wrap gap-3">
+          <Link
+            to="/portal/messages"
+            className="btn-gold-outline px-5 py-2.5 rounded-xl text-xs font-semibold uppercase inline-flex items-center gap-2"
+          >
+            <MessageSquare className="w-4 h-4 text-[#FFBD55]" />
+            <span>Direct Chat with Mentors</span>
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

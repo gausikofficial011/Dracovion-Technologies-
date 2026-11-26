@@ -3,18 +3,20 @@ import { useLocation } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import {
-  MessageSquare,
   Send,
-  FolderGit2,
-  Package,
   Shield,
-  User as UserIcon,
   Loader2,
-  Clock,
   Sparkles,
-  CheckCircle2,
   RefreshCw,
+  Paperclip,
 } from 'lucide-react';
+import {
+  type ChatAttachmentFile,
+  mergeMessagesById,
+  uploadChatAttachment,
+  useChatStream,
+} from '../../hooks/useChatRealtime';
+import { MessageAttachmentsList, StagedAttachmentsBar } from '../../components/chat/ChatAttachments';
 
 interface ChannelItem {
   id: string;
@@ -29,7 +31,9 @@ interface ChannelItem {
 export const ClientMessagesPage: React.FC = () => {
   const { user } = useAuth();
   const location = useLocation();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const feedContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastScrolledThreadRef = useRef<string>('');
 
   const [channels, setChannels] = useState<{
     support: ChannelItem;
@@ -57,13 +61,19 @@ export const ClientMessagesPage: React.FC = () => {
 
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [isLoadingChannels, setIsLoadingChannels] = useState(true);
+  const [stagedAttachments, setStagedAttachments] = useState<ChatAttachmentFile[]>([]);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Auto-scroll to bottom of chat
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const currentUserId = user?.id || (user as any)?._id;
+
+  const scrollFeedToBottom = () => {
+    const el = feedContainerRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
   };
 
   // 1. Load Channels
@@ -98,7 +108,6 @@ export const ClientMessagesPage: React.FC = () => {
           orders: orderChans,
         });
 
-        // Check if query param requests a specific project
         const params = new URLSearchParams(location.search);
         const queryProject = params.get('project');
         const queryOrder = params.get('order');
@@ -111,20 +120,21 @@ export const ClientMessagesPage: React.FC = () => {
           if (found) setSelectedChannel(found);
         }
       }
-    } catch (_) {
-      // Fallback: Support channel is always active
-    } finally {
-      setIsLoadingChannels(false);
+    } catch {
+      // Fallback: Support channel remains active
     }
   };
 
   useEffect(() => {
     loadChannels();
-  }, []);
+  }, [location.search]);
 
   // 2. Fetch Messages for Current Channel
   const fetchMessages = async (silent = false) => {
-    if (!silent) setIsLoadingMessages(true);
+    if (!silent) {
+      setIsLoadingMessages(true);
+      setErrorMsg(null);
+    }
     try {
       let endpoint = '/messages/direct';
       if (selectedChannel.type === 'project') {
@@ -135,8 +145,11 @@ export const ClientMessagesPage: React.FC = () => {
 
       const res = await api.get<{ success: boolean; messages: any[] }>(endpoint);
       setMessages(res.messages || []);
-    } catch (_) {
-      if (!silent) setMessages([]);
+    } catch (err: any) {
+      if (!silent) {
+        setMessages([]);
+        setErrorMsg(err?.message || 'Unable to load channel messages.');
+      }
     } finally {
       if (!silent) setIsLoadingMessages(false);
     }
@@ -146,25 +159,90 @@ export const ClientMessagesPage: React.FC = () => {
     fetchMessages();
   }, [selectedChannel.id, selectedChannel.type]);
 
-  // Polling every 4 seconds for real-time responsiveness
+  // 3. Real-time Server-Sent Events stream for <50ms instant chat delivery
+  const { isStreamConnected } = useChatStream(Boolean(user), (evt) => {
+    if (!evt?.message) return;
+    const matchesChannel =
+      (selectedChannel.type === 'support' && evt.channelType === 'support') ||
+      (selectedChannel.type === 'order' && evt.channelType === 'order' && String(evt.orderId) === String(selectedChannel.id)) ||
+      (selectedChannel.type === 'project' && evt.channelType === 'project' && String(evt.projectId) === String(selectedChannel.id));
+
+    if (matchesChannel) {
+      setMessages(prev => mergeMessagesById(prev, [evt.message]));
+      setTimeout(scrollFeedToBottom, 30);
+    }
+  });
+
+  // 4. Adaptive background sync + tab focus resync
   useEffect(() => {
+    const intervalMs = isStreamConnected ? 8000 : 2500;
     const timer = setInterval(() => {
       fetchMessages(true);
-    }, 4000);
-    return () => clearInterval(timer);
-  }, [selectedChannel.id, selectedChannel.type]);
+    }, intervalMs);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchMessages(true);
+      }
+    };
+    window.addEventListener('focus', handleVisibility);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', handleVisibility);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [selectedChannel.id, selectedChannel.type, isStreamConnected]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const threadKey = `${selectedChannel.type}:${selectedChannel.id}:${messages.length}:${messages[messages.length - 1]?._id || ''}`;
+    if (lastScrolledThreadRef.current !== threadKey) {
+      lastScrolledThreadRef.current = threadKey;
+      scrollFeedToBottom();
+    }
+  }, [selectedChannel.id, selectedChannel.type, messages]);
 
-  // 3. Send Message
+  const handleFilesSelected = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+
+    setIsUploadingAttachment(true);
+    setErrorMsg(null);
+    try {
+      const uploaded: ChatAttachmentFile[] = [];
+      for (const file of list.slice(0, 5 - stagedAttachments.length)) {
+        const record = await uploadChatAttachment(
+          file,
+          selectedChannel.type === 'project' ? selectedChannel.id : undefined
+        );
+        uploaded.push(record);
+      }
+      setStagedAttachments(prev => [...prev, ...uploaded]);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to upload file attachment.');
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const items = e.clipboardData?.files;
+    if (items && items.length > 0) {
+      e.preventDefault();
+      await handleFilesSelected(items);
+    }
+  };
+
+  // 5. Send Message
   const handleSend = async (e?: React.FormEvent, customContent?: string) => {
     if (e) e.preventDefault();
     const contentToSend = (customContent !== undefined ? customContent : newMessage).trim();
-    if (!contentToSend || isSending) return;
+    const hasAttachments = customContent === undefined && stagedAttachments.length > 0;
+    if ((!contentToSend && !hasAttachments) || isSending) return;
 
     setIsSending(true);
+    setErrorMsg(null);
     try {
       let endpoint = '/messages/direct';
       if (selectedChannel.type === 'project') {
@@ -175,15 +253,19 @@ export const ClientMessagesPage: React.FC = () => {
 
       const res = await api.post<{ success: boolean; message: any }>(endpoint, {
         content: contentToSend,
+        attachments: hasAttachments ? stagedAttachments.map(a => a._id) : [],
       });
 
       if (res.success && res.message) {
-        setMessages(prev => [...prev, res.message]);
-        setNewMessage('');
-        setTimeout(scrollToBottom, 50);
+        setMessages(prev => mergeMessagesById(prev, [res.message]));
+        if (customContent === undefined) {
+          setNewMessage('');
+          setStagedAttachments([]);
+        }
+        setTimeout(scrollFeedToBottom, 40);
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to dispatch message');
+      setErrorMsg(err?.message || 'Failed to dispatch message.');
     } finally {
       setIsSending(false);
     }
@@ -196,33 +278,49 @@ export const ClientMessagesPage: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6 select-none max-w-7xl mx-auto">
+    <div className="space-y-5 max-w-7xl mx-auto">
       {/* Page Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#292E38] pb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#292E38] pb-4">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#11151D] border border-[#D6A94F]/30 text-[10px] font-mono text-[#FFBD55] uppercase font-bold mb-2">
             <span>OFFICIAL CLIENT DIRECT CHANNEL</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold font-display text-white">Direct Messages &amp; Project Communications</h1>
           <p className="text-xs sm:text-sm text-[#9299A6] mt-1">
-            24/7 direct encrypted line with Dracovion executive leadership, system architects, and senior engineers.
+            Real-time direct encrypted line and instant file sharing with Dracovion leadership and engineers.
           </p>
         </div>
 
         <button
-          onClick={() => fetchMessages()}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#11151D] border border-[#292E38] hover:border-[#D6A94F] text-[#9299A6] hover:text-[#FFBD55] text-xs font-mono transition-all self-start sm:self-auto cursor-pointer"
+          onClick={() => {
+            fetchMessages();
+            loadChannels();
+          }}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#11151D] border border-[#292E38] hover:border-[#D6A94F] text-[#9299A6] hover:text-[#FFBD55] text-xs font-mono transition-all self-start sm:self-auto cursor-pointer shrink-0"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           <span>Refresh Line</span>
         </button>
       </div>
 
+      {errorMsg && (
+        <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-3">
+          <span>{errorMsg}</span>
+          <button
+            type="button"
+            onClick={() => setErrorMsg(null)}
+            className="text-[11px] font-mono uppercase text-rose-300 hover:text-white cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Main Chat Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[720px]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-auto lg:h-[calc(100dvh-14.5rem)] lg:min-h-[460px] lg:max-h-[680px]">
         {/* Left: Channels Sidebar (4 cols) */}
-        <div className="lg:col-span-4 p-4 rounded-3xl bg-[#080A0E] border border-[#292E38] shadow-2xl flex flex-col justify-between overflow-hidden">
-          <div className="space-y-5 overflow-y-auto pr-1">
+        <div className="lg:col-span-4 h-[270px] lg:h-full min-h-0 p-4 rounded-3xl bg-[#080A0E] border border-[#292E38] shadow-2xl flex flex-col justify-between overflow-hidden">
+          <div data-lenis-prevent className="space-y-5 overflow-y-auto flex-1 min-h-0 pr-1">
             {/* Primary Support Line */}
             <div>
               <span className="text-[10px] font-mono text-[#FFBD55] uppercase tracking-wider block px-2 mb-2 font-bold">
@@ -317,52 +415,52 @@ export const ClientMessagesPage: React.FC = () => {
           </div>
 
           {/* Footer note */}
-          <div className="pt-3 border-t border-[#292E38] text-[10px] font-mono text-[#9299A6] flex items-center justify-between">
-            <span>Direct Line SLA: &lt; 2 hrs</span>
-            <span className="text-[#FFBD55]">Tamil Nadu, IN</span>
+          <div className="pt-3 border-t border-[#292E38] text-[10px] font-mono text-[#9299A6] flex items-center justify-between shrink-0">
+            <span>{isStreamConnected ? 'SSE Real-Time Active' : 'Direct Line SLA: < 2 hrs'}</span>
+            <span className="text-[#FFBD55]">Instant Sharing</span>
           </div>
         </div>
 
         {/* Right: Active Chat Window (8 cols) */}
-        <div className="lg:col-span-8 p-6 rounded-3xl bg-[#080A0E] border border-[#292E38] shadow-2xl flex flex-col justify-between overflow-hidden">
+        <div className="lg:col-span-8 h-[500px] sm:h-[540px] lg:h-full min-h-0 p-5 sm:p-6 rounded-3xl bg-[#080A0E] border border-[#292E38] shadow-2xl flex flex-col overflow-hidden">
           {/* Chat Header */}
-          <div className="pb-4 border-b border-[#292E38] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
+          <div className="pb-4 border-b border-[#292E38] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold font-display text-white">{selectedChannel.name}</h2>
+                <h2 className="text-base font-bold font-display text-white truncate">{selectedChannel.name}</h2>
                 {selectedChannel.code && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#11151D] border border-[#D6A94F]/40 text-[#FFBD55]">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#11151D] border border-[#D6A94F]/40 text-[#FFBD55] shrink-0">
                     {selectedChannel.code}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-[#9299A6] mt-0.5">{selectedChannel.description || 'Secure communication channel.'}</p>
+              <p className="text-xs text-[#9299A6] mt-0.5 truncate">{selectedChannel.description || 'Secure communication channel.'}</p>
             </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto">
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#11151D] border border-[#52D69A]/40 text-[10px] font-mono font-bold text-[#52D69A]">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#52D69A] animate-pulse" />
-                <span>24/7 Verified Channel</span>
+                <span>{isStreamConnected ? 'Instant Live Channel' : '24/7 Verified Channel'}</span>
               </span>
             </div>
           </div>
 
           {/* Messages Feed Area */}
-          <div className="flex-1 overflow-y-auto my-4 pr-2 space-y-4">
+          <div ref={feedContainerRef} data-lenis-prevent className="flex-1 min-h-0 overflow-y-auto my-3 pr-2 space-y-4">
             {isLoadingMessages ? (
-              <div className="py-20 text-center text-[#9299A6] font-mono text-xs flex items-center justify-center gap-2">
+              <div className="py-16 text-center text-[#9299A6] font-mono text-xs flex items-center justify-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-[#FFBD55]" />
-                <span>Decrypting thread messages...</span>
+                <span>Loading channel messages...</span>
               </div>
             ) : messages.length === 0 ? (
-              <div className="py-12 px-6 rounded-2xl bg-[#11151D]/60 border border-[#292E38] text-center space-y-4 my-auto">
+              <div className="py-10 px-6 rounded-2xl bg-[#11151D]/60 border border-[#292E38] text-center space-y-4 my-auto">
                 <div className="w-12 h-12 rounded-2xl bg-[#050609] border border-[#D6A94F]/40 flex items-center justify-center text-[#FFBD55] mx-auto shadow-md">
                   <Sparkles className="w-6 h-6 text-[#FFBD55]" />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-white font-display">Direct Channel Ready</h3>
                   <p className="text-xs text-[#9299A6] max-w-md mx-auto">
-                    Send a message directly to Dracovion system architects and executive leadership. Every inquiry is reviewed and answered by an engineer.
+                    Send messages or share screenshots and specifications directly with Dracovion engineers and leadership.
                   </p>
                 </div>
 
@@ -381,7 +479,8 @@ export const ClientMessagesPage: React.FC = () => {
               </div>
             ) : (
               messages.map(msg => {
-                const isMine = msg.senderId?._id === user?.id || msg.senderId === user?.id;
+                const senderId = String(msg.senderId?._id || msg.senderId || '');
+                const isMine = Boolean(currentUserId && senderId === String(currentUserId));
                 const senderRole = msg.senderId?.role || (isMine ? 'client' : 'admin');
                 const isStaff = ['owner', 'admin', 'ceo', 'super_admin', 'employee', 'team_member'].includes(senderRole);
 
@@ -405,34 +504,63 @@ export const ClientMessagesPage: React.FC = () => {
                     </div>
 
                     <div
-                      className={`p-4 rounded-2xl max-w-xl text-xs leading-relaxed space-y-1 shadow-lg ${
+                      className={`p-3.5 rounded-2xl max-w-xl text-xs leading-relaxed space-y-1 shadow-lg ${
                         isMine
                           ? 'bg-[#15191F] border border-[#D6A94F]/40 text-white rounded-tr-none'
                           : 'bg-[#11151D] border border-[#292E38] text-[#E7E9EE] rounded-tl-none'
                       }`}
                     >
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                      {msg.content && <p className="whitespace-pre-wrap select-text">{msg.content}</p>}
+                      <MessageAttachmentsList attachments={msg.attachments} />
                     </div>
                   </div>
                 );
               })
             )}
-            <div ref={messagesEndRef} />
           </div>
 
+          <StagedAttachmentsBar
+            files={stagedAttachments}
+            onRemove={(id) => setStagedAttachments(prev => prev.filter(f => f._id !== id))}
+          />
+
           {/* Input Bar */}
-          <form onSubmit={handleSend} className="pt-3 border-t border-[#292E38] flex items-center gap-3">
+          <form onSubmit={(e) => handleSend(e)} className="pt-3 border-t border-[#292E38] flex items-center gap-2.5 shrink-0">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={e => {
+                if (e.target.files) handleFilesSelected(e.target.files);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingAttachment || stagedAttachments.length >= 5}
+              title="Attach file, image, or specification (or paste screenshot with Ctrl+V)"
+              className="h-[46px] px-3.5 rounded-xl bg-[#11151D] border border-[#292E38] hover:border-[#D6A94F] text-[#9299A6] hover:text-[#FFBD55] disabled:opacity-40 transition-all flex items-center justify-center cursor-pointer shrink-0"
+            >
+              {isUploadingAttachment ? (
+                <Loader2 className="w-4 h-4 animate-spin text-[#FFBD55]" />
+              ) : (
+                <Paperclip className="w-4 h-4" />
+              )}
+            </button>
             <input
               type="text"
               value={newMessage}
               onChange={e => setNewMessage(e.target.value)}
-              placeholder="Type your message to Dracovion system architects & engineering..."
+              onPaste={handlePaste}
+              placeholder="Type your message or paste a screenshot to share..."
               className="flex-1 h-[46px] px-4 rounded-xl bg-[#11151D] border border-[#292E38] text-white placeholder-[#9299A6] focus:outline-none focus:border-[#D6A94F] text-xs font-sans transition-all"
             />
             <button
               type="submit"
-              disabled={isSending || !newMessage.trim()}
-              className="h-[46px] px-6 rounded-xl text-xs font-bold uppercase tracking-wider text-[#050609] shadow-[0_0_20px_rgba(214,169,79,0.35)] hover:shadow-[0_0_30px_rgba(255,189,85,0.5)] disabled:opacity-40 transition-all flex items-center gap-2 cursor-pointer shrink-0"
+              disabled={isSending || isUploadingAttachment || (!newMessage.trim() && stagedAttachments.length === 0)}
+              className="h-[46px] px-5 sm:px-6 rounded-xl text-xs font-bold uppercase tracking-wider text-[#050609] shadow-[0_0_20px_rgba(214,169,79,0.35)] hover:shadow-[0_0_30px_rgba(255,189,85,0.5)] disabled:opacity-40 transition-all flex items-center gap-2 cursor-pointer shrink-0"
               style={{
                 background: 'linear-gradient(90deg, #D6A94F 0%, #FFBD55 100%)',
               }}
