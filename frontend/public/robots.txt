@@ -25,4 +25,4 @@ Disallow: /register
 Disallow: /forgot-password
 Disallow: /api/
 
-Sitemap: https://dracovion.com/sitemap.xml
+Sitemap: https://dracovion-technologies.dracoviontech.workers.dev/sitemap.xml
