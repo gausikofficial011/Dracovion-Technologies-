@@ -2,7 +2,6 @@ import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { DracovionLogo } from '../components/ui/DragonLogo';
-import { CustomCursor } from '../components/common/CustomCursor';
 import { ScrollProgressBar } from '../components/common/ScrollProgressBar';
 import { PortalSocialLinks } from '../components/layout/PortalSocialLinks';
 import {
@@ -46,7 +45,6 @@ export const ClientPortalLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#050609]/80 backdrop-blur-sm flex flex-col md:flex-row text-slate-200 selection:bg-[#D6A94F]/30 selection:text-[#F5D18A]">
-      <CustomCursor />
       <ScrollProgressBar />
 
       {/* Sidebar Navigation */}

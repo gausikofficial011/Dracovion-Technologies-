@@ -785,28 +785,36 @@ export const OrderDetailPage: React.FC = () => {
                       <span>Pay Directly & Submit Transaction Reference</span>
                     </div>
 
-                    {proof?.submittedAt && (
-                      <div
-                        className={`p-3.5 rounded-xl border text-xs font-mono space-y-1 ${
-                          proof.verificationStatus === 'verified'
-                            ? 'bg-[#52D69A]/10 border-[#52D69A]/40 text-[#52D69A]'
-                            : proof.verificationStatus === 'rejected'
-                            ? 'bg-red-500/10 border-red-500/35 text-red-300'
-                            : 'bg-[#78BFFF]/10 border-[#78BFFF]/35 text-[#78BFFF]'
-                        }`}
-                      >
-                        <div className="font-bold flex items-center gap-1.5">
-                          <GovShieldCheck className="w-4 h-4" />
-                          <span>
-                            Latest Proof: ₹{Number(proof.amountRupees || 0).toLocaleString()} • Status:{' '}
-                            {(proof.verificationStatus || 'pending').toUpperCase()}
-                          </span>
+                    {(proof?.transactionRef || proof?.paidAt || proof?.submittedAt) && (() => {
+                      const proofStatus = proof.status || proof.verificationStatus || 'pending';
+                      const proofAmountRupees = proof.amountMinor
+                        ? proof.amountMinor / 100
+                        : proof.amountRupees || 0;
+                      return (
+                        <div
+                          className={`p-3.5 rounded-xl border text-xs font-mono space-y-1 ${
+                            proofStatus === 'verified'
+                              ? 'bg-[#52D69A]/10 border-[#52D69A]/40 text-[#52D69A]'
+                              : proofStatus === 'rejected'
+                              ? 'bg-red-500/10 border-red-500/35 text-red-300'
+                              : 'bg-[#78BFFF]/10 border-[#78BFFF]/35 text-[#78BFFF]'
+                          }`}
+                        >
+                          <div className="font-bold flex items-center gap-1.5">
+                            <GovShieldCheck className="w-4 h-4 shrink-0" />
+                            <span>
+                              Latest Proof: ₹{Number(proofAmountRupees).toLocaleString('en-IN')} • Status:{' '}
+                              {String(proofStatus).toUpperCase()}
+                            </span>
+                          </div>
+                          {proof.transactionRef && (
+                            <div className="text-[11px] text-[#A6AEBC]">
+                              UTR / Ref: {proof.transactionRef}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-[11px] text-[#A6AEBC]">
-                          UTR / Ref: {proof.transactionRef}
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {directPaymentError && (
                       <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs font-mono text-red-300">

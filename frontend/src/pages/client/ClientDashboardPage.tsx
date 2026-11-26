@@ -71,7 +71,7 @@ export const ClientDashboardPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 select-none">
+    <div className="max-w-7xl mx-auto space-y-8">
       {/* Welcome Banner - Cinematic Obsidian & Antique Gold */}
       <div className="relative overflow-hidden p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-[#11151D] via-[#0A0D13] to-[#050609] border-[1.5px] border-[#D6A94F]/40 shadow-[0_0_35px_rgba(214,169,79,0.18)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
         {/* Ambient Gold Glow Aura */}

@@ -2,7 +2,6 @@ import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { DracovionLogo } from '../components/ui/DragonLogo';
-import { CustomCursor } from '../components/common/CustomCursor';
 import { ScrollProgressBar } from '../components/common/ScrollProgressBar';
 import { PortalSocialLinks } from '../components/layout/PortalSocialLinks';
 import {
@@ -10,6 +9,7 @@ import {
   Users,
   Inbox,
   FolderGit2,
+  Package,
   FileCheck,
   ShieldCheck,
   Sliders,
@@ -53,7 +53,7 @@ export const AdminPortalLayout: React.FC = () => {
     { label: 'Client Direct Messages', path: '/admin/messages', icon: MessageSquare },
     { label: 'Leads & Enquiries', path: '/admin/leads', icon: Inbox },
     { label: 'Projects & Orders', path: '/admin/projects', icon: FolderGit2 },
-    { label: 'Engineering Orders Desk', path: '/workspace/orders', icon: FolderGit2 },
+    { label: 'Engineering Orders Desk', path: '/workspace/orders', icon: Package },
     { label: 'Quotations & Proposals', path: '/admin/quotations', icon: FileCheck },
     { label: "President's Broadcasts", path: '/admin/announcements', icon: Radio },
     { label: 'Users & Fraud Control', path: '/admin/users', icon: Users },
@@ -68,8 +68,7 @@ export const AdminPortalLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#050609]/80 backdrop-blur-sm flex flex-col md:flex-row text-slate-200">
-      <CustomCursor />
+    <div className="min-h-screen bg-[#050609]/80 backdrop-blur-sm flex flex-col md:flex-row text-slate-200 selection:bg-[#D6A94F]/30 selection:text-[#F5D18A]">
       <ScrollProgressBar />
 
       {/* Sidebar */}
@@ -98,11 +97,13 @@ export const AdminPortalLayout: React.FC = () => {
                 {user?.fullName.charAt(0)}
               </div>
             )}
-            <div className="overflow-hidden flex-1">
-              <div className="text-sm font-bold text-white truncate">{user?.fullName}</div>
+            <div className="overflow-hidden flex-1 min-w-0">
+              <div className="text-sm font-bold text-white truncate" title={user?.fullName || 'Admin'}>
+                {user?.fullName}
+              </div>
               <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#FFBD55] uppercase font-semibold">
                 <ShieldCheck className="w-3 h-3 text-[#FFBD55] shrink-0" />
-                <span className="truncate">{user?.role}</span>
+                <span className="truncate">{String(user?.role || '').replace(/_/g, ' ')}</span>
               </div>
             </div>
           </div>

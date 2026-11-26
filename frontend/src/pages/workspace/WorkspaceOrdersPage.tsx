@@ -641,10 +641,21 @@ export const WorkspaceOrdersPage: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            {order.handoverPaymentProof?.submittedAt && (
+                            {(order.handoverPaymentProof?.transactionRef ||
+                              order.handoverPaymentProof?.paidAt ||
+                              order.handoverPaymentProof?.submittedAt) && (
                               <div className="text-[10px] font-mono text-[#78BFFF] mt-0.5">
-                                Paid ₹{Number(order.handoverPaymentProof.amountRupees || 0).toLocaleString()} • UTR:{' '}
-                                {order.handoverPaymentProof.transactionRef} ({order.handoverPaymentProof.verificationStatus})
+                                Paid ₹
+                                {Number(
+                                  order.handoverPaymentProof.amountMinor
+                                    ? order.handoverPaymentProof.amountMinor / 100
+                                    : order.handoverPaymentProof.amountRupees || 0
+                                ).toLocaleString('en-IN')}{' '}
+                                • UTR: {order.handoverPaymentProof.transactionRef || 'Direct'} (
+                                {order.handoverPaymentProof.status ||
+                                  order.handoverPaymentProof.verificationStatus ||
+                                  'pending'}
+                                )
                               </div>
                             )}
                           </div>

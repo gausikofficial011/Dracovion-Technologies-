@@ -197,57 +197,27 @@ export const App: React.FC = () => {
             {/* PORTAL 01: CLIENT PORTAL ROUTES */}
             <Route
               path="/portal/signup"
-              element={
-                <>
-                  <CustomCursor />
-                  <ClientSignupPage />
-                </>
-              }
+              element={<ClientSignupPage />}
             />
             <Route
               path="/signup"
-              element={
-                <>
-                  <CustomCursor />
-                  <ClientSignupPage />
-                </>
-              }
+              element={<ClientSignupPage />}
             />
             <Route
               path="/register"
-              element={
-                <>
-                  <CustomCursor />
-                  <ClientSignupPage />
-                </>
-              }
+              element={<ClientSignupPage />}
             />
             <Route
               path="/portal/login"
-              element={
-                <>
-                  <CustomCursor />
-                  <ClientLoginPage />
-                </>
-              }
+              element={<ClientLoginPage />}
             />
             <Route
               path="/signin"
-              element={
-                <>
-                  <CustomCursor />
-                  <ClientLoginPage />
-                </>
-              }
+              element={<ClientLoginPage />}
             />
             <Route
               path="/login"
-              element={
-                <>
-                  <CustomCursor />
-                  <ClientLoginPage />
-                </>
-              }
+              element={<ClientLoginPage />}
             />
             {/* PORTAL 01: CLIENT PORTAL AUTHENTICATED ROUTES */}
             <Route
@@ -298,18 +268,12 @@ export const App: React.FC = () => {
             {/* PORTAL 02: INTERNAL WORKSPACE ROUTES (Staff Only) */}
             <Route
               path="/workspace/login"
-              element={
-                <>
-                  <CustomCursor />
-                  <WorkspaceLoginPage />
-                </>
-              }
+              element={<WorkspaceLoginPage />}
             />
             <Route
               path="/workspace/orders"
               element={
                 <RequireAuth>
-                  <CustomCursor />
                   <WorkspaceOrdersPage />
                 </RequireAuth>
               }
@@ -318,7 +282,6 @@ export const App: React.FC = () => {
               path="/workspace/dashboard"
               element={
                 <RequireAuth>
-                  <CustomCursor />
                   <WorkspaceOrdersPage />
                 </RequireAuth>
               }
@@ -327,7 +290,6 @@ export const App: React.FC = () => {
               path="/workspace/super-admin"
               element={
                 <RequireAuth>
-                  <CustomCursor />
                   <SuperAdminPage />
                 </RequireAuth>
               }
@@ -335,12 +297,7 @@ export const App: React.FC = () => {
 
             <Route
               path="/forgot-password"
-              element={
-                <>
-                  <CustomCursor />
-                  <ForgotPasswordPage />
-                </>
-              }
+              element={<ForgotPasswordPage />}
             />
 
             {/* Owner & Administrator Portal Routes */}

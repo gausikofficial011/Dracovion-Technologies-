@@ -94,7 +94,7 @@ export const ClientOrdersPage: React.FC = () => {
   });
 
   return (
-    <div className="space-y-8 select-none max-w-7xl mx-auto">
+    <div className="space-y-8 max-w-7xl mx-auto">
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 sm:p-8 rounded-3xl bg-[#080A0E] border-[1.5px] border-[#D6A94F]/40 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-80 h-80 bg-[#D6A94F]/10 blur-3xl pointer-events-none" />

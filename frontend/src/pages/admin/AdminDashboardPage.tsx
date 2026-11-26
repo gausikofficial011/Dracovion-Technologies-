@@ -53,7 +53,7 @@ export const AdminDashboardPage: React.FC = () => {
   const { metrics, recentEnquiries, recentProjects } = data;
 
   return (
-    <div className="space-y-8 select-none">
+    <div className="max-w-7xl mx-auto space-y-8">
       {/* Overview Banner */}
       <div className="p-6 sm:p-8 rounded-3xl bg-[#080A0E] border border-[#292E38] shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -202,7 +202,7 @@ export const AdminDashboardPage: React.FC = () => {
                     key={`${proj.kind || 'project'}-${proj._id}`}
                     className="p-3.5 rounded-2xl bg-[#11151D] border border-[#292E38] flex items-center justify-between gap-3 hover:border-[#D6A94F]/40 transition-colors"
                   >
-                    <div className="overflow-hidden">
+                    <div className="overflow-hidden min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <span
                           className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
@@ -216,7 +216,7 @@ export const AdminDashboardPage: React.FC = () => {
                         <span className="text-xs font-mono text-[#FFBD55]">{proj.projectCode}</span>
                         <span className="text-xs font-bold text-white truncate">{proj.title}</span>
                       </div>
-                      <div className="text-[11px] text-[#9299A6]">
+                      <div className="text-[11px] text-[#9299A6] truncate">
                         Client: {proj.clientId?.fullName || 'Client'} ({proj.progressPercent ?? 0}% Complete)
                         {isOrder && proj.assignedEmployeeId?.fullName ? ` • Lead: ${proj.assignedEmployeeId.fullName}` : ''}
                       </div>
@@ -225,7 +225,7 @@ export const AdminDashboardPage: React.FC = () => {
                       <StatusBadge status={proj.status} />
                       <Link
                         to={manageTo}
-                        className="text-[11px] text-[#FFBD55] hover:underline font-semibold"
+                        className="text-[11px] text-[#FFBD55] hover:underline font-semibold whitespace-nowrap"
                       >
                         Control →
                       </Link>
