@@ -24,14 +24,15 @@ function getTransporter(): Transporter | null {
     return transporter;
   }
 
-  // Option 2: Gmail SMTP via 16-character Google App Password
-  if (env.GMAIL_USER && env.GMAIL_APP_PASSWORD) {
+  // Option 2: Gmail SMTP via 16-character Google App Password (normalize copy-pasted spaces)
+  const cleanAppPassword = env.GMAIL_APP_PASSWORD.replace(/\s+/g, '');
+  if (env.GMAIL_USER && cleanAppPassword) {
     logger.info('Initializing Gmail SMTP transport via Google App Password...');
     transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
         user: env.GMAIL_USER,
-        pass: env.GMAIL_APP_PASSWORD,
+        pass: cleanAppPassword,
       },
     });
     return transporter;

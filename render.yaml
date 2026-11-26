@@ -9,8 +9,8 @@ services:
     region: singapore   # Closest to Tamil Nadu, India
     plan: free          # Upgrade to "starter" ($7/mo) for always-on (no sleep)
 
-    # Build: install backend workspace deps via root lockfile and compile TypeScript
-    buildCommand: npm ci --include-workspace-root --workspace=backend && npm run build --workspace=backend
+    # Build: install backend workspace deps (including dev tools like tsc despite NODE_ENV=production) and compile
+    buildCommand: NODE_ENV=development MONGOMS_DISABLE_POSTINSTALL=true npm ci --include=dev --include-workspace-root --workspace=backend && npm run build --workspace=backend
 
     # Start: run compiled server from backend workspace root
     startCommand: npm run start --workspace=backend
@@ -21,6 +21,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+
+      - key: MONGOMS_DISABLE_POSTINSTALL
+        value: "true"
 
       # =========================================================
       # IMPORTANT: Set these in Render Dashboard → Environment tab

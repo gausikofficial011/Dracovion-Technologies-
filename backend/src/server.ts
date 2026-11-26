@@ -29,12 +29,12 @@ async function bootstrap() {
     // 3. Initialize Express Application
     const app = createApp();
 
-    const server = app.listen(env.PORT, () => {
-      logger.info(`Dracovion Technologies API Server running on port ${env.PORT}`, {
+    const server = app.listen(env.PORT, '0.0.0.0', () => {
+      logger.info(`Dracovion Technologies API Server running on 0.0.0.0:${env.PORT}`, {
         env: env.NODE_ENV,
         port: env.PORT,
         clientUrl: env.CLIENT_URL,
-        endpoints: `http://localhost:${env.PORT}/api/v1/health`,
+        endpoints: `/api/v1/health`,
       });
     });
 

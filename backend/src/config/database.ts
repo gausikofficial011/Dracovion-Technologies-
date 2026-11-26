@@ -6,19 +6,21 @@ import { logger } from '../utils/logger';
 
 let mongoMemoryServer: MongoMemoryServerType | null = null;
 
-// Ensure reliable DNS resolution for MongoDB Atlas SRV connection strings across all environments
-if (env.MONGODB_URI && env.MONGODB_URI.startsWith('mongodb+srv://')) {
-  try {
-    dns.setServers(['8.8.8.8', '1.1.1.1']);
-  } catch {
-    // ignore
-  }
+function isDnsResolutionError(err: unknown): boolean {
+  const msg = ((err as Error)?.message || '').toLowerCase();
+  return (
+    msg.includes('querysrv') ||
+    msg.includes('enotfound') ||
+    msg.includes('etimeout') ||
+    msg.includes('eservfail') ||
+    msg.includes('eai_again')
+  );
 }
 
 export async function connectDatabase(): Promise<typeof mongoose> {
-  const uri = env.MONGODB_URI;
+  const uri = (env.MONGODB_URI || '').trim().replace(/^["']|["']$/g, '');
 
-  if (uri && uri.trim() !== '') {
+  if (uri !== '') {
     try {
       logger.info('Attempting connection to MongoDB Atlas...', { uri: uri.replace(/:[^:]*@/, ':****@') });
       const conn = await mongoose.connect(uri, {
@@ -31,12 +33,36 @@ export async function connectDatabase(): Promise<typeof mongoose> {
       });
       return conn;
     } catch (err) {
-      logger.warn('Failed to connect to configured MONGODB_URI. Checking fallback options...', {
-        error: (err as Error).message,
-      });
+      // Retry once with public DNS resolvers if container/ISP DNS failed SRV lookup
+      if (uri.startsWith('mongodb+srv://') && isDnsResolutionError(err)) {
+        try {
+          logger.warn('SRV DNS lookup failed with system resolver; retrying via 8.8.8.8 / 1.1.1.1...');
+          dns.setServers(['8.8.8.8', '1.1.1.1']);
+          const conn = await mongoose.connect(uri, {
+            serverSelectionTimeoutMS: 10000,
+            dbName: 'dracovion_technologies',
+          });
+          logger.info('MongoDB Atlas connected successfully (fallback DNS)', {
+            host: conn.connection.host,
+            dbName: conn.connection.name,
+          });
+          return conn;
+        } catch (retryErr) {
+          logger.warn('MongoDB Atlas retry with fallback DNS also failed.', {
+            error: (retryErr as Error).message,
+          });
+        }
+      } else {
+        logger.warn('Failed to connect to configured MONGODB_URI. Checking fallback options...', {
+          error: (err as Error).message,
+        });
+      }
 
       if (env.NODE_ENV === 'production') {
-        logger.error('Production requires a valid and reachable MONGODB_URI. Exiting.', err);
+        logger.error(
+          'Production requires a valid and reachable MONGODB_URI (verify Atlas Network Access includes 0.0.0.0/0 and URI encoding). Exiting.',
+          err
+        );
         throw err;
       }
     }
