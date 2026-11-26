@@ -27,7 +27,8 @@ export async function getDashboardMetrics(req: AuthenticatedRequest, res: Respon
       pendingPaymentsCount,
       totalClients,
       recentEnquiries,
-      recentProjects,
+      recentSprintProjects,
+      recentClientOrders,
     ] = await Promise.all([
       Enquiry.countDocuments(),
       Enquiry.countDocuments({ status: 'new' }),
@@ -50,7 +51,47 @@ export async function getDashboardMetrics(req: AuthenticatedRequest, res: Respon
       User.countDocuments({ role: { $in: ['client', 'student', 'partner'] } }),
       Enquiry.find().sort({ createdAt: -1 }).limit(5),
       Project.find().sort({ updatedAt: -1 }).limit(5).populate('clientId', 'fullName email companyName'),
+      ProjectOrder.find()
+        .sort({ updatedAt: -1 })
+        .limit(6)
+        .populate('clientId', 'fullName email companyName')
+        .populate('assignedEmployeeId', 'fullName designation email'),
     ]);
+
+    const normalizedOrders = recentClientOrders.map((order: any) => ({
+      _id: order._id,
+      kind: 'order',
+      projectCode: order.orderNumber,
+      orderNumber: order.orderNumber,
+      title: order.projectTitle,
+      status: order.status,
+      progressPercent: order.progressPercent ?? 0,
+      handoverStatus: order.handoverStatus,
+      serviceCategory: order.serviceCategory,
+      estimatedBudget: order.estimatedBudget,
+      clientId: order.clientId,
+      assignedEmployeeId: order.assignedEmployeeId,
+      updatedAt: order.updatedAt || order.createdAt,
+      createdAt: order.createdAt,
+    }));
+
+    const normalizedProjects = recentSprintProjects.map((proj: any) => ({
+      _id: proj._id,
+      kind: 'project',
+      projectCode: proj.projectCode,
+      title: proj.title,
+      status: proj.status,
+      progressPercent: proj.progressPercent ?? 0,
+      handoverStatus: proj.handoverStatus,
+      category: proj.category,
+      clientId: proj.clientId,
+      updatedAt: proj.updatedAt || proj.createdAt,
+      createdAt: proj.createdAt,
+    }));
+
+    const recentProjects = [...normalizedOrders, ...normalizedProjects]
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime())
+      .slice(0, 8);
 
     const activeProjects = activeSprintProjects + activeOrdersCount;
     const completedProjects = completedPaidProjects + completedPaidOrders;

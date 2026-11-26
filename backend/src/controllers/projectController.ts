@@ -24,7 +24,7 @@ const VALID_STATUS_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
 
 export async function getClientProjects(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const clientId = (req.session as any)?.user?.userId;
+    const clientId = req.user?.userId || (req.session as any)?.user?.userId;
     const projects = await Project.find({ clientId }).sort({ updatedAt: -1 });
 
     res.json({ success: true, projects });
@@ -72,7 +72,7 @@ export async function getAllProjects(req: AuthenticatedRequest, res: Response, n
 
 export async function getProjectById(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const sessionUser = (req.session as any)?.user;
+    const sessionUser = req.user || (req.session as any)?.user;
     const project = await Project.findById(req.params.id)
       .populate('clientId', 'fullName email companyName collegeOrUniversity phone')
       .populate('quotationId')
@@ -82,10 +82,10 @@ export async function getProjectById(req: AuthenticatedRequest, res: Response, n
       throw new NotFoundError('Project not found');
     }
 
-    // Authorization: Owner, Admin, Assigned Team Member, or Project Client
-    const isAssigned = project.assignedTeam.some(t => t.userId && (t.userId as any)._id?.toString() === sessionUser.userId);
-    const isOwnerOrAdmin = sessionUser.role === 'owner' || sessionUser.role === 'admin';
-    const isClient = project.clientId && (project.clientId as any)._id?.toString() === sessionUser.userId;
+    // Authorization: Leadership (Super Admin, CEO, Owner, Admin), Assigned Team Member, or Project Client
+    const isAssigned = project.assignedTeam.some(t => t.userId && (t.userId as any)._id?.toString() === sessionUser?.userId);
+    const isOwnerOrAdmin = ['owner', 'admin', 'super_admin', 'ceo'].includes(sessionUser?.role);
+    const isClient = project.clientId && (project.clientId as any)._id?.toString() === sessionUser?.userId;
 
     if (!isOwnerOrAdmin && !isClient && !isAssigned) {
       throw new ForbiddenError('You are not authorized to view this project.');
@@ -99,7 +99,7 @@ export async function getProjectById(req: AuthenticatedRequest, res: Response, n
 
 export async function updateProjectStatus(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const sessionUser = (req.session as any)?.user;
+    const sessionUser = req.user || (req.session as any)?.user;
     const { status, note, progressPercent } = z
       .object({
         status: z.enum([
@@ -129,8 +129,9 @@ export async function updateProjectStatus(req: AuthenticatedRequest, res: Respon
     const currentStatus = project.status;
     const allowedTransitions = VALID_STATUS_TRANSITIONS[currentStatus] || [];
 
-    // Owner can override transitions in special cases, but normal flows must adhere to state machine
-    if (sessionUser.role !== 'owner' && !allowedTransitions.includes(status) && currentStatus !== status) {
+    // President/Super Admin/CEO can override transitions in special cases, while normal flows follow the state machine
+    const isLeadershipOverride = ['owner', 'super_admin', 'ceo'].includes(sessionUser?.role);
+    if (!isLeadershipOverride && !allowedTransitions.includes(status) && currentStatus !== status) {
       throw new BadRequestError(`Invalid status transition from '${currentStatus}' to '${status}'.`);
     }
 

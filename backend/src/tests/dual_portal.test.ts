@@ -189,6 +189,16 @@ describe('Dracovion Dual Portal System & Order Lifecycle Tests', () => {
     const preCompleteMetrics = await superAdminAgent.get('/api/v1/admin/dashboard-metrics');
     expect(preCompleteMetrics.status).toBe(200);
     const baselineCompleted = preCompleteMetrics.body.metrics.completedProjects;
+    expect(Array.isArray(preCompleteMetrics.body.recentProjects)).toBe(true);
+    expect(
+      preCompleteMetrics.body.recentProjects.some(
+        (p: any) => p.kind === 'order' && String(p._id) === String(orderId)
+      )
+    ).toBe(true);
+
+    const adminProjectsListRes = await superAdminAgent.get('/api/v1/projects/admin/all');
+    expect(adminProjectsListRes.status).toBe(200);
+    expect(Array.isArray(adminProjectsListRes.body.projects)).toBe(true);
 
     // Complete the already payment-verified order -> now completedProjects increments by 1
     const markCompletedRes = await employeeAgent.patch(`/api/v1/orders/${orderId}/status`).send({

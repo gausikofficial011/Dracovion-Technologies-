@@ -145,6 +145,26 @@ export async function downloadFile(req: AuthenticatedRequest, res: Response, nex
       }
     }
 
+    // Allow client or staff download if attached to a ProjectOrder deliverable (client unlocked upon verified payment)
+    if (!authorized) {
+      const orderWithDeliverable = await ProjectOrder.findOne({ 'deliverables.fileKey': fileKey })
+        .select('clientId assignedEmployeeId handoverStatus handoverPaymentProof')
+        .lean();
+
+      if (orderWithDeliverable) {
+        const isOrderPaidOrCleared =
+          orderWithDeliverable.handoverStatus === 'handover_completed' ||
+          orderWithDeliverable.handoverPaymentProof?.status === 'verified';
+        if (
+          isStaff ||
+          orderWithDeliverable.assignedEmployeeId?.toString() === userId ||
+          (orderWithDeliverable.clientId?.toString() === userId && isOrderPaidOrCleared)
+        ) {
+          authorized = true;
+        }
+      }
+    }
+
     if (!authorized) {
       throw new ForbiddenError('Access forbidden to this file');
     }
@@ -168,7 +188,7 @@ export async function downloadFile(req: AuthenticatedRequest, res: Response, nex
 
 export async function getProjectFiles(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const sessionUser = (req.session as any)?.user;
+    const sessionUser = req.user || (req.session as any)?.user;
     const projectId = req.params.projectId;
 
     const project = await Project.findById(projectId);
@@ -176,9 +196,10 @@ export async function getProjectFiles(req: AuthenticatedRequest, res: Response, 
       throw new NotFoundError('Project not found');
     }
 
-    const isClient = project.clientId.toString() === sessionUser.userId;
-    const isOwnerOrAdmin = sessionUser.role === 'owner' || sessionUser.role === 'admin';
-    const isAssigned = project.assignedTeam.some(t => t.userId.toString() === sessionUser.userId);
+    const userId = String(sessionUser?.userId || '');
+    const isClient = project.clientId.toString() === userId;
+    const isOwnerOrAdmin = EXECUTIVE_ROLES.has(sessionUser?.role);
+    const isAssigned = project.assignedTeam.some(t => t.userId.toString() === userId);
 
     if (!isClient && !isOwnerOrAdmin && !isAssigned) {
       throw new ForbiddenError('Unauthorized to view files for this project');

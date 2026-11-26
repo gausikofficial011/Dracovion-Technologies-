@@ -176,12 +176,12 @@ export const AdminDashboardPage: React.FC = () => {
           )}
         </div>
 
-        {/* Recent Projects */}
+        {/* Recent Projects & Orders */}
         <div className="p-6 rounded-3xl bg-[#080A0E] border border-[#292E38] shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <FolderGit2 className="w-4 h-4 text-[#D6A94F]" />
-              <span>Active Projects &amp; Sprints</span>
+              <span>Active Projects &amp; Client Orders</span>
             </h3>
             <Link to="/admin/projects" className="text-xs text-[#FFBD55] hover:text-[#F5D18A] hover:underline font-mono">
               Manage All Projects →
@@ -189,34 +189,50 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
 
           {recentProjects.length === 0 ? (
-            <div className="p-8 text-center text-xs text-[#9299A6]">No projects currently active.</div>
+            <div className="p-8 text-center text-xs text-[#9299A6]">No projects or orders currently active.</div>
           ) : (
             <div className="space-y-3">
-              {recentProjects.map((proj: any) => (
-                <div
-                  key={proj._id}
-                  className="p-3.5 rounded-2xl bg-[#11151D] border border-[#292E38] flex items-center justify-between gap-3 hover:border-[#D6A94F]/40 transition-colors"
-                >
-                  <div className="overflow-hidden">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-xs font-mono text-[#FFBD55]">{proj.projectCode}</span>
-                      <span className="text-xs font-bold text-white truncate">{proj.title}</span>
+              {recentProjects.map((proj: any) => {
+                const isOrder = proj.kind === 'order' || Boolean(proj.orderNumber);
+                const manageTo = isOrder
+                  ? `/admin/projects?order=${proj._id}`
+                  : `/admin/projects?project=${proj._id}`;
+                return (
+                  <div
+                    key={`${proj.kind || 'project'}-${proj._id}`}
+                    className="p-3.5 rounded-2xl bg-[#11151D] border border-[#292E38] flex items-center justify-between gap-3 hover:border-[#D6A94F]/40 transition-colors"
+                  >
+                    <div className="overflow-hidden">
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                            isOrder
+                              ? 'bg-[#D6A94F]/20 text-[#FFBD55] border border-[#D6A94F]/40'
+                              : 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                          }`}
+                        >
+                          {isOrder ? 'ORDER' : 'SPRINT'}
+                        </span>
+                        <span className="text-xs font-mono text-[#FFBD55]">{proj.projectCode}</span>
+                        <span className="text-xs font-bold text-white truncate">{proj.title}</span>
+                      </div>
+                      <div className="text-[11px] text-[#9299A6]">
+                        Client: {proj.clientId?.fullName || 'Client'} ({proj.progressPercent ?? 0}% Complete)
+                        {isOrder && proj.assignedEmployeeId?.fullName ? ` • Lead: ${proj.assignedEmployeeId.fullName}` : ''}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-[#9299A6]">
-                      Client: {proj.clientId?.fullName || 'Client'} ({proj.progressPercent}% Complete)
+                    <div className="shrink-0 flex flex-col items-end gap-1.5">
+                      <StatusBadge status={proj.status} />
+                      <Link
+                        to={manageTo}
+                        className="text-[11px] text-[#FFBD55] hover:underline font-semibold"
+                      >
+                        Control →
+                      </Link>
                     </div>
                   </div>
-                  <div className="shrink-0 flex flex-col items-end gap-1.5">
-                    <StatusBadge status={proj.status} />
-                    <Link
-                      to="/admin/projects"
-                      className="text-[11px] text-[#FFBD55] hover:underline font-semibold"
-                    >
-                      Control →
-                    </Link>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
