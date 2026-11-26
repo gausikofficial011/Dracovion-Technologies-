@@ -177,13 +177,29 @@ describe('Dracovion Dual Portal System & Order Lifecycle Tests', () => {
     expect(updateStatusRes.status).toBe(200);
     expect(updateStatusRes.body.order.status).toBe('in_progress');
 
-    // 8. Super Admin logs in and verifies full platform oversight
+    // 8. Super Admin logs in and verifies full platform oversight & completed+paid metrics gating
     const saLoginRes = await superAdminAgent.post('/api/v1/auth/workspace/login').send({
       email: 'gausik@dracovion.com',
       password: 'DracovionSuperAdmin2026!',
     });
     expect(saLoginRes.status).toBe(200);
     expect(saLoginRes.body.user.role).toBe('super_admin');
+
+    // Order is in_progress (even with verified payment) -> must NOT count toward completedProjects yet
+    const preCompleteMetrics = await superAdminAgent.get('/api/v1/admin/dashboard-metrics');
+    expect(preCompleteMetrics.status).toBe(200);
+    const baselineCompleted = preCompleteMetrics.body.metrics.completedProjects;
+
+    // Complete the already payment-verified order -> now completedProjects increments by 1
+    const markCompletedRes = await employeeAgent.patch(`/api/v1/orders/${orderId}/status`).send({
+      status: 'completed',
+      clientVisibleNote: 'Production deployment completed and payment verified.',
+    });
+    expect(markCompletedRes.status).toBe(200);
+
+    const postCompleteMetrics = await superAdminAgent.get('/api/v1/admin/dashboard-metrics');
+    expect(postCompleteMetrics.status).toBe(200);
+    expect(postCompleteMetrics.body.metrics.completedProjects).toBe(baselineCompleted + 1);
   });
 
   it('Super Admin Governance: Create new worker and permanent deletion security', async () => {

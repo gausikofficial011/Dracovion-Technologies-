@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { User } from '../models/User';
 import { Enquiry } from '../models/Enquiry';
 import { Project } from '../models/Project';
+import { ProjectOrder } from '../models/ProjectOrder';
 import { Quotation } from '../models/Quotation';
 import { Payment } from '../models/Payment';
 import { Invoice } from '../models/Invoice';
@@ -17,8 +18,10 @@ export async function getDashboardMetrics(req: AuthenticatedRequest, res: Respon
     const [
       totalEnquiries,
       newEnquiries,
-      activeProjects,
-      completedProjects,
+      activeSprintProjects,
+      activeOrdersCount,
+      completedPaidProjects,
+      completedPaidOrders,
       pendingQuotations,
       verifiedPaymentsAgg,
       pendingPaymentsCount,
@@ -29,18 +32,28 @@ export async function getDashboardMetrics(req: AuthenticatedRequest, res: Respon
       Enquiry.countDocuments(),
       Enquiry.countDocuments({ status: 'new' }),
       Project.countDocuments({ status: { $in: ['approved', 'in_progress', 'review'] } }),
-      Project.countDocuments({ status: 'completed' }),
+      ProjectOrder.countDocuments({ status: { $nin: ['completed', 'cancelled'] } }),
+      Project.countDocuments({
+        status: 'completed',
+        $or: [{ handoverStatus: 'handover_cleared' }, { 'handoverPaymentProof.status': 'verified' }],
+      }),
+      ProjectOrder.countDocuments({
+        status: 'completed',
+        $or: [{ handoverStatus: 'handover_completed' }, { 'handoverPaymentProof.status': 'verified' }],
+      }),
       Quotation.countDocuments({ status: { $in: ['sent', 'negotiating'] } }),
       Payment.aggregate([
         { $match: { status: 'verified' } },
         { $group: { _id: null, totalMinor: { $sum: '$amountMinor' } } },
       ]),
       Payment.countDocuments({ status: 'submitted' }),
-      User.countDocuments({ role: { $in: ['client', 'student'] } }),
+      User.countDocuments({ role: { $in: ['client', 'student', 'partner'] } }),
       Enquiry.find().sort({ createdAt: -1 }).limit(5),
       Project.find().sort({ updatedAt: -1 }).limit(5).populate('clientId', 'fullName email companyName'),
     ]);
 
+    const activeProjects = activeSprintProjects + activeOrdersCount;
+    const completedProjects = completedPaidProjects + completedPaidOrders;
     const totalRevenueVerifiedMinor = verifiedPaymentsAgg.length > 0 ? verifiedPaymentsAgg[0].totalMinor : 0;
 
     res.json({

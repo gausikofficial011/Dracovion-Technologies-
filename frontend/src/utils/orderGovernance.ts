@@ -22,3 +22,25 @@ export function getMissingPersonalDetails(client: any, order?: any): string[] {
 
   return missing;
 }
+
+/**
+ * Returns true only when an order is completed AND its handover payment is verified.
+ */
+export function isOrderCompletedAndPaid(order: any): boolean {
+  if (!order || order.status !== 'completed') return false;
+  return (
+    order.handoverStatus === 'handover_completed' ||
+    order.handoverPaymentProof?.status === 'verified'
+  );
+}
+
+/**
+ * Returns true only when a project is completed AND its settlement payment is verified.
+ */
+export function isProjectCompletedAndPaid(project: any): boolean {
+  if (!project || project.status !== 'completed') return false;
+  return (
+    project.handoverStatus === 'handover_cleared' ||
+    project.handoverPaymentProof?.status === 'verified'
+  );
+}

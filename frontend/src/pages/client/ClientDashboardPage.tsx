@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { DragonEmblem } from '../../components/ui/DragonLogo';
+import { isOrderCompletedAndPaid, isProjectCompletedAndPaid } from '../../utils/orderGovernance';
 import {
   FolderGit2,
   FileCheck,
@@ -40,8 +41,15 @@ export const ClientDashboardPage: React.FC = () => {
   }, []);
 
   const pendingQuotations = quotations.filter((q) => q.status === 'sent' || q.status === 'negotiating');
-  const activeProjects = projects.filter((p) => !['completed', 'cancelled', 'rejected'].includes(p.status));
-  const activeOrders = orders.filter((o) => !['completed', 'cancelled'].includes(o.status));
+  const deliveredOrders = orders.filter(isOrderCompletedAndPaid);
+  const deliveredProjects = projects.filter(isProjectCompletedAndPaid);
+  const totalDeliveredCount = deliveredOrders.length + deliveredProjects.length;
+  const activeProjects = projects.filter(
+    (p) => !['cancelled', 'rejected'].includes(p.status) && !isProjectCompletedAndPaid(p)
+  );
+  const activeOrders = orders.filter(
+    (o) => o.status !== 'cancelled' && !isOrderCompletedAndPaid(o)
+  );
 
   const getOrderStatusBadge = (status: string) => {
     switch (status) {
@@ -154,9 +162,9 @@ export const ClientDashboardPage: React.FC = () => {
             </div>
           </div>
           <div className="text-3xl font-extrabold text-white font-mono">
-            {orders.length + projects.length}
+            {totalDeliveredCount}
           </div>
-          <div className="text-[11px] text-[#9299A6] mt-1">Lifetime engagements</div>
+          <div className="text-[11px] text-[#9299A6] mt-1">Completed &amp; payment verified</div>
         </div>
 
         {/* Metric 4 */}
@@ -168,7 +176,8 @@ export const ClientDashboardPage: React.FC = () => {
             </div>
           </div>
           <div className="text-3xl font-extrabold text-white font-mono">
-            {projects.reduce((acc, p) => acc + (p.deliverables ? p.deliverables.length : 0), 0)}
+            {deliveredProjects.reduce((acc, p) => acc + (p.deliverables ? p.deliverables.length : 0), 0) +
+              deliveredOrders.reduce((acc, o) => acc + (o.deliverables ? o.deliverables.length : 0), 0)}
           </div>
           <div className="text-[11px] text-[#9299A6] mt-1">Available production artifacts</div>
         </div>

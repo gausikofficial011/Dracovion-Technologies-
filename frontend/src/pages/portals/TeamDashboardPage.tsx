@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 import { Code2, CheckSquare, ArrowRight, FolderGit2, Clock, Loader2 } from 'lucide-react';
 import { DragonEmblem } from '../../components/ui/DragonLogo';
+import { isOrderCompletedAndPaid } from '../../utils/orderGovernance';
 
 export const TeamDashboardPage: React.FC = () => {
   const { user } = useAuth();
@@ -19,11 +20,11 @@ export const TeamDashboardPage: React.FC = () => {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const activeOrders = orders.filter((o) => !['completed', 'cancelled'].includes(o.status));
+  const activeOrders = orders.filter((o) => o.status !== 'cancelled' && !isOrderCompletedAndPaid(o));
   const assignedToMe = orders.filter(
     (o) => o.assignedEmployeeId?._id === user?.id || o.assignedEmployeeId === user?.id
   );
-  const completedOrders = orders.filter((o) => o.status === 'completed');
+  const completedOrders = orders.filter(isOrderCompletedAndPaid);
 
   return (
     <div className="max-w-6xl mx-auto p-6 sm:p-10 space-y-10 bg-[#050609]">

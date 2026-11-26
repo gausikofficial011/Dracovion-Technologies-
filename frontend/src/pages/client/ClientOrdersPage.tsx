@@ -16,6 +16,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { DragonEmblem } from '../../components/ui/DragonLogo';
+import { isOrderCompletedAndPaid } from '../../utils/orderGovernance';
 
 export const ClientOrdersPage: React.FC = () => {
   const [orders, setOrders] = useState<any[]>([]);
@@ -87,8 +88,8 @@ export const ClientOrdersPage: React.FC = () => {
 
   const filteredOrders = orders.filter(o => {
     if (statusFilter === 'all') return true;
-    if (statusFilter === 'active') return !['completed', 'cancelled'].includes(o.status);
-    if (statusFilter === 'completed') return o.status === 'completed';
+    if (statusFilter === 'active') return o.status !== 'cancelled' && !isOrderCompletedAndPaid(o);
+    if (statusFilter === 'completed') return isOrderCompletedAndPaid(o);
     return o.status === statusFilter;
   });
 

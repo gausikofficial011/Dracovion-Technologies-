@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, resolveApiUrl } from '../../api/client';
 import { DownloadCloud, FileArchive, ShieldCheck, FolderGit2 } from 'lucide-react';
+import { isOrderCompletedAndPaid, isProjectCompletedAndPaid } from '../../utils/orderGovernance';
 
 export const ClientFilesPage: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
@@ -22,7 +23,7 @@ export const ClientFilesPage: React.FC = () => {
   }, []);
 
   const allDeliverables = [
-    ...projects.flatMap(p =>
+    ...projects.filter(isProjectCompletedAndPaid).flatMap(p =>
       (p.deliverables || []).map((d: any) => ({
         ...d,
         itemCode: p.projectCode,
@@ -30,7 +31,7 @@ export const ClientFilesPage: React.FC = () => {
         sourceType: 'Sprint Project',
       }))
     ),
-    ...orders.flatMap(o =>
+    ...orders.filter(isOrderCompletedAndPaid).flatMap(o =>
       (o.deliverables || []).map((d: any) => ({
         ...d,
         itemCode: o.orderNumber,
