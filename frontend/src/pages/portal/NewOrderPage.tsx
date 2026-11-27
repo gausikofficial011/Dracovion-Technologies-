@@ -21,6 +21,7 @@ import {
   Calendar,
   IndianRupee,
   FileText,
+  PlusCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -231,7 +232,7 @@ export const NewOrderPage: React.FC = () => {
               <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
                 <Link
                   to={`/portal/order/${createdOrder.orderNumber}`}
-                  className="px-6 py-3.5 rounded-xl font-display font-bold text-xs uppercase tracking-wider text-[#080A0E] flex items-center justify-center gap-2 shadow-lg"
+                  className="px-6 py-3.5 rounded-xl font-display font-bold text-xs uppercase tracking-wider text-[#080A0E] flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] transition-transform"
                   style={{
                     background: 'linear-gradient(90deg, #D6A94F 0%, #FFBD55 50%, #D6A94F 100%)',
                   }}
@@ -239,9 +240,27 @@ export const NewOrderPage: React.FC = () => {
                   <span>Track Order Live</span>
                   <ArrowRight className="w-4 h-4 text-[#080A0E]" />
                 </Link>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreatedOrder(null);
+                    setProjectTitle('');
+                    setDescription('');
+                    setEstimatedBudget('');
+                    setPreferredDeadline('');
+                    setPriority('normal');
+                    setErrorMessage(null);
+                  }}
+                  className="px-6 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider text-[#FFBD55] bg-[#11151D] border border-[#D6A94F]/40 hover:bg-[#15191F] hover:border-[#FFBD55] transition-all flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02]"
+                >
+                  <PlusCircle className="w-4 h-4 text-[#FFBD55]" />
+                  <span>Place Another Order</span>
+                </button>
+
                 <Link
                   to="/portal/dashboard"
-                  className="px-6 py-3.5 rounded-xl text-xs font-semibold text-slate-300 bg-[#11151D] border border-[#292E38] hover:text-white"
+                  className="px-6 py-3.5 rounded-xl text-xs font-semibold text-slate-300 bg-[#11151D] border border-[#292E38] hover:text-white flex items-center justify-center hover:border-slate-500 transition-colors"
                 >
                   Return to Dashboard
                 </Link>
