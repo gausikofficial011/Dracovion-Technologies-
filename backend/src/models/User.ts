@@ -14,7 +14,7 @@ export interface IUser extends Document {
   githubId?: string;
   avatarUrl?: string;
   isEmailVerified: boolean;
-  status: 'active' | 'suspended' | 'pending';
+  status: 'active' | 'suspended' | 'pending' | 'deactivated';
   fraudFlag?: boolean;
   moderationReason?: string;
   moderatedBy?: string;
@@ -101,7 +101,7 @@ const UserSchema = new Schema<IUser>(
     isEmailVerified: { type: Boolean, default: false },
     status: {
       type: String,
-      enum: ['active', 'suspended', 'pending'],
+      enum: ['active', 'suspended', 'pending', 'deactivated'],
       default: 'active',
     },
     fraudFlag: { type: Boolean, default: false },

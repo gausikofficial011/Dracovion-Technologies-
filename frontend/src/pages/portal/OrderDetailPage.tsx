@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, resolveApiUrl } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -25,6 +25,9 @@ import {
   Sparkles,
   ExternalLink,
   Paperclip,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -61,10 +64,30 @@ import {
 
 export const OrderDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { user, updateProfile, refreshUser } = useAuth();
   const [order, setOrder] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Order deletion state
+  const [showDeleteOrderModal, setShowDeleteOrderModal] = useState(false);
+  const [isDeletingThisOrder, setIsDeletingThisOrder] = useState(false);
+  const [deleteThisOrderError, setDeleteThisOrderError] = useState<string | null>(null);
+
+  const handleDeleteCurrentOrder = async () => {
+    if (!order) return;
+    setIsDeletingThisOrder(true);
+    setDeleteThisOrderError(null);
+    try {
+      await api.delete(`/orders/${order._id || order.orderNumber}`);
+      navigate('/portal/orders');
+    } catch (err: any) {
+      setDeleteThisOrderError(err.message || 'Failed to delete order.');
+    } finally {
+      setIsDeletingThisOrder(false);
+    }
+  };
 
   // Chat state
   const [messages, setMessages] = useState<any[]>([]);
@@ -341,9 +364,26 @@ export const OrderDetailPage: React.FC = () => {
           <span className="font-semibold uppercase tracking-wider">Back to Dashboard</span>
         </Link>
 
-        <span className="font-mono text-xs text-[#FFBD55] font-bold tracking-widest bg-[#11151D] px-3 py-1 rounded-lg border border-[#292E38]">
-          {order.orderNumber}
-        </span>
+        <div className="flex items-center gap-3">
+          {!isHandoverCleared && (
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteThisOrderError(null);
+                setShowDeleteOrderModal(true);
+              }}
+              title="Delete this project order"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono text-rose-400 hover:text-white bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 hover:border-rose-500 transition-all cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Delete Order</span>
+            </button>
+          )}
+
+          <span className="font-mono text-xs text-[#FFBD55] font-bold tracking-widest bg-[#11151D] px-3 py-1 rounded-lg border border-[#292E38]">
+            {order.orderNumber}
+          </span>
+        </div>
       </header>
 
       {/* Main Container */}
@@ -1107,6 +1147,71 @@ export const OrderDetailPage: React.FC = () => {
           </form>
         </div>
       </main>
+
+      {/* Delete Order Confirmation Modal */}
+      {showDeleteOrderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#050609]/80 backdrop-blur-sm">
+          <div className="w-full max-w-md p-6 sm:p-7 rounded-3xl bg-[#080A0E] border border-rose-600/60 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#292E38] pb-4">
+              <div className="flex items-center gap-2 text-rose-400 font-display font-bold text-base">
+                <AlertTriangle className="w-5 h-5" />
+                <span>Delete Project Order</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeleteOrderModal(false)}
+                className="p-1 rounded-lg text-[#9299A6] hover:text-white hover:bg-[#11151D] transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-[#B7BBC4] leading-relaxed">
+              <p>
+                Are you sure you want to permanently delete order <strong className="text-white font-mono">{order.orderNumber}</strong> (&quot;{order.projectTitle}&quot;)?
+              </p>
+              <p className="text-[11px] text-[#9299A6]">
+                All specifications, architectural notes, and direct engineer chat discussions for this order will be permanently erased.
+              </p>
+            </div>
+
+            {deleteThisOrderError && (
+              <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-600/40 text-xs text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{deleteThisOrderError}</span>
+              </div>
+            )}
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteOrderModal(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-mono text-[#9299A6] hover:text-white hover:bg-[#11151D] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingThisOrder}
+                onClick={handleDeleteCurrentOrder}
+                className="px-5 py-2.5 rounded-xl text-xs font-mono font-bold uppercase text-white bg-rose-600 hover:bg-rose-500 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingThisOrder ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

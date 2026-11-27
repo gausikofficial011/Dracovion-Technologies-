@@ -6,7 +6,7 @@ import { User } from '../models/User';
 import { Message } from '../models/Message';
 import { FileRecord } from '../models/FileRecord';
 import { AuthenticatedRequest } from '../types';
-import { BadRequestError, NotFoundError, ForbiddenError } from '../utils/errors';
+import { BadRequestError, NotFoundError, ForbiddenError, UnauthorizedError } from '../utils/errors';
 import {
   sendOrderConfirmationEmail,
   sendStaffNewOrderNotification,
@@ -915,6 +915,68 @@ export async function updateOrderStatus(req: AuthenticatedRequest, res: Response
       success: true,
       message: `Order ${order.orderNumber} updated to ${status.replace(/_/g, ' ').toUpperCase()}.`,
       order,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/v1/orders/:id
+ * Allows the owning client (or platform leadership) to delete an order.
+ * Removes order and its associated chat messages.
+ */
+export async function deleteProjectOrder(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    const sessionUser = req.user || (req.session as any)?.user;
+
+    if (!sessionUser?.userId) {
+      throw new UnauthorizedError('Authentication required.');
+    }
+
+    const orderQuery = id.match(/^[0-9a-fA-F]{24}$/)
+      ? { $or: [{ _id: id }, { orderNumber: id }] }
+      : { orderNumber: id };
+
+    const order = await ProjectOrder.findOne(orderQuery);
+    if (!order) {
+      throw new NotFoundError('Order not found.');
+    }
+
+    const isOwner = order.clientId.toString() === sessionUser.userId.toString();
+    const isStaff = ['owner', 'admin', 'ceo', 'super_admin'].includes(sessionUser.role);
+
+    if (!isOwner && !isStaff) {
+      throw new ForbiddenError('You are not authorized to delete this order.');
+    }
+
+    // Protection rule: cannot delete if handover payment is already verified and deliverables completed
+    if (order.handoverStatus === 'handover_completed' && order.handoverPaymentProof?.status === 'verified') {
+      throw new BadRequestError('Completed orders with verified handover payments cannot be deleted.');
+    }
+
+    const orderNumber = order.orderNumber;
+    const orderTitle = order.projectTitle;
+
+    // Delete associated chat messages for this order
+    await Message.deleteMany({ orderId: order._id });
+
+    // Delete the order
+    await ProjectOrder.findByIdAndDelete(order._id);
+
+    await recordAuditLog({
+      userId: sessionUser.userId,
+      action: 'ORDER_DELETED',
+      entityType: 'ProjectOrder',
+      entityId: order._id.toString(),
+      ipAddress: req.ip,
+      details: { orderNumber, projectTitle: orderTitle, deletedByRole: sessionUser.role },
+    });
+
+    res.json({
+      success: true,
+      message: `Order ${orderNumber} ("${orderTitle}") has been successfully deleted.`,
     });
   } catch (err) {
     next(err);

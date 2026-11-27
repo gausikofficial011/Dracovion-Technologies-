@@ -2,6 +2,8 @@ import { Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { User } from '../models/User';
+import { ProjectOrder } from '../models/ProjectOrder';
+import { Message } from '../models/Message';
 import { AuthenticatedRequest, UserRole } from '../types';
 import { BadRequestError, ConflictError, NotFoundError, UnauthorizedError, ForbiddenError } from '../utils/errors';
 import { recordAuditLog } from '../services/auditService';
@@ -435,6 +437,150 @@ export async function resetPassword(req: AuthenticatedRequest, res: Response, ne
     res.json({
       success: true,
       message: 'Password has been successfully updated. You may now log in.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/v1/auth/client/deactivate
+ * Allows a client to self-deactivate their account.
+ * Destroys active session, flags status as deactivated, and records an audit log.
+ */
+export async function deactivateAccount(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const sessionUser = req.user || (req.session as any)?.user;
+    if (!sessionUser?.userId) {
+      throw new UnauthorizedError('Authentication session required.');
+    }
+
+    if (['owner', 'super_admin'].includes(sessionUser.role)) {
+      throw new ForbiddenError('Primary platform Owner or Super Admin accounts cannot be deactivated here.');
+    }
+
+    const { reason, password } = z
+      .object({
+        reason: z.string().trim().max(300).optional(),
+        password: z.string().optional(),
+      })
+      .parse(req.body);
+
+    const user = await User.findById(sessionUser.userId);
+    if (!user) {
+      throw new NotFoundError('User account not found.');
+    }
+
+    // If local password exists, optionally verify password
+    if (user.passwordHash && password) {
+      const isValid = await user.comparePassword(password);
+      if (!isValid) {
+        throw new BadRequestError('Incorrect password. Please verify and try again.');
+      }
+    }
+
+    user.status = 'deactivated';
+    user.moderationReason = reason ? `Self-deactivated by client: ${reason}` : 'Self-deactivated by client.';
+    user.moderatedAt = new Date();
+    user.moderatedBy = `CLIENT (${user.email})`;
+    await user.save();
+
+    await recordAuditLog({
+      userId: user._id,
+      action: 'USER_ACCOUNT_DEACTIVATED',
+      entityType: 'User',
+      entityId: user._id.toString(),
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+      details: { email: user.email, role: user.role, reason: user.moderationReason },
+    });
+
+    req.session.destroy((err) => {
+      if (err) return next(err);
+      res.clearCookie(env.SESSION_NAME);
+      res.json({
+        success: true,
+        message: 'Your account has been deactivated. You have been securely logged out.',
+      });
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/v1/auth/client/account
+ * Allows a client to permanently delete their account and associated non-completed records.
+ */
+export async function deleteAccount(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const sessionUser = req.user || (req.session as any)?.user;
+    if (!sessionUser?.userId) {
+      throw new UnauthorizedError('Authentication session required.');
+    }
+
+    if (['owner', 'super_admin'].includes(sessionUser.role)) {
+      throw new ForbiddenError('Primary executive accounts cannot be deleted.');
+    }
+
+    const { confirmation, password } = z
+      .object({
+        confirmation: z.string().optional(),
+        password: z.string().optional(),
+      })
+      .parse(req.body);
+
+    const user = await User.findById(sessionUser.userId);
+    if (!user) {
+      throw new NotFoundError('User account not found.');
+    }
+
+    // Require either valid password OR confirmation === 'DELETE'
+    if (user.passwordHash && password) {
+      const isValid = await user.comparePassword(password);
+      if (!isValid) {
+        throw new BadRequestError('Incorrect password. Please verify and try again.');
+      }
+    } else if (confirmation?.trim().toUpperCase() !== 'DELETE') {
+      throw new BadRequestError('Please type DELETE to confirm permanent account removal.');
+    }
+
+    // Remove client non-handover orders and messages
+    const clientOrders = await ProjectOrder.find({ clientId: user._id });
+    for (const ord of clientOrders) {
+      if (ord.handoverStatus === 'handover_completed' && ord.handoverPaymentProof?.status === 'verified') {
+        // Keep legally binding paid orders for accounting, unlink client name
+        ord.status = 'completed';
+        await ord.save();
+      } else {
+        await Message.deleteMany({ orderId: ord._id });
+        await ProjectOrder.findByIdAndDelete(ord._id);
+      }
+    }
+
+    // Delete direct client support messages
+    await Message.deleteMany({ clientId: user._id });
+
+    await recordAuditLog({
+      userId: user._id,
+      action: 'USER_ACCOUNT_DELETED',
+      entityType: 'User',
+      entityId: user._id.toString(),
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+      details: { email: user.email, role: user.role, fullName: user.fullName },
+    });
+
+    // Delete user document
+    await User.findByIdAndDelete(user._id);
+
+    req.session.destroy((err) => {
+      if (err) return next(err);
+      res.clearCookie(env.SESSION_NAME);
+      res.json({
+        success: true,
+        message: 'Your account and personal data have been permanently deleted.',
+      });
     });
   } catch (err) {
     next(err);

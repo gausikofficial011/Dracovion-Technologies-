@@ -12,6 +12,7 @@ import {
   postProjectUpdate,
   getOrderMessages,
   sendOrderMessage,
+  deleteProjectOrder,
 } from '../controllers/orderController';
 import { requireAuth, requireWorkspaceStaff } from '../middlewares/auth';
 
@@ -39,6 +40,7 @@ router.patch('/:id/status', requireAuth, requireWorkspaceStaff, updateOrderStatu
 
 // Accessible by client who owns the order or any staff member
 router.get('/:id', requireAuth, getOrderById);
+router.delete('/:id', requireAuth, deleteProjectOrder);
 
 export default router;
 

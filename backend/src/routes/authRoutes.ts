@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, logout, getMe, forgotPassword, resetPassword, updateProfile } from '../controllers/authController';
+import { register, login, logout, getMe, forgotPassword, resetPassword, updateProfile, deactivateAccount, deleteAccount } from '../controllers/authController';
 import {
   sendClientOTP,
   verifyClientOTP,
@@ -26,6 +26,8 @@ router.get('/client/google/callback', handleGoogleCallback);
 router.post('/client/google/verify-credential', verifyGoogleCredentialHandler);
 router.get('/client/github', getGitHubAuthUrlHandler);
 router.get('/client/github/callback', handleGitHubCallback);
+router.post('/client/deactivate', requireAuth, deactivateAccount);
+router.delete('/client/account', requireAuth, deleteAccount);
 
 // ==========================================
 // 2. INTERNAL WORKSPACE AUTHENTICATION (Staff only)
@@ -44,5 +46,7 @@ router.put('/profile', requireAuth, updateProfile);
 router.patch('/profile', requireAuth, updateProfile);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
+router.post('/deactivate', requireAuth, deactivateAccount);
+router.delete('/account', requireAuth, deleteAccount);
 
 export default router;

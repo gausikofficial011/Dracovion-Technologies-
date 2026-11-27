@@ -14,6 +14,10 @@ import {
   Calendar,
   AlertCircle,
   RefreshCw,
+  Trash2,
+  Loader2,
+  X,
+  AlertTriangle,
 } from 'lucide-react';
 import { DragonEmblem } from '../../components/ui/DragonLogo';
 import { isOrderCompletedAndPaid } from '../../utils/orderGovernance';
@@ -22,6 +26,27 @@ export const ClientOrdersPage: React.FC = () => {
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [orderToDelete, setOrderToDelete] = useState<any | null>(null);
+  const [isDeletingOrder, setIsDeletingOrder] = useState(false);
+  const [deleteOrderError, setDeleteOrderError] = useState<string | null>(null);
+  const [deleteOrderSuccess, setDeleteOrderSuccess] = useState<string | null>(null);
+
+  const confirmDeleteOrder = async () => {
+    if (!orderToDelete) return;
+    setIsDeletingOrder(true);
+    setDeleteOrderError(null);
+    try {
+      await api.delete(`/orders/${orderToDelete._id}`);
+      setDeleteOrderSuccess(`Order ${orderToDelete.orderNumber} ("${orderToDelete.projectTitle}") has been deleted.`);
+      setOrderToDelete(null);
+      await loadOrders(true);
+      setTimeout(() => setDeleteOrderSuccess(null), 5000);
+    } catch (err: any) {
+      setDeleteOrderError(err.message || 'Failed to delete order.');
+    } finally {
+      setIsDeletingOrder(false);
+    }
+  };
 
   const loadOrders = async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -132,6 +157,23 @@ export const ClientOrdersPage: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* Notifications */}
+      {deleteOrderSuccess && (
+        <div className="p-4 rounded-2xl bg-emerald-950/70 border border-emerald-600/40 text-emerald-300 text-xs flex items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{deleteOrderSuccess}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeleteOrderSuccess(null)}
+            className="text-[11px] font-mono text-emerald-400 hover:text-white cursor-pointer"
+          >
+            DISMISS
+          </button>
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex items-center justify-between gap-4 pb-2 border-b border-[#292E38] overflow-x-auto">
@@ -252,19 +294,100 @@ export const ClientOrdersPage: React.FC = () => {
                   <span>Order Discussion</span>
                 </Link>
 
-                <Link
-                  to={`/portal/order/${order._id}`}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-[#050609] shadow-md hover:scale-[1.02] transition-all cursor-pointer"
-                  style={{
-                    background: 'linear-gradient(90deg, #D6A94F 0%, #FFBD55 100%)',
-                  }}
-                >
-                  <span>Track Milestones</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-[#050609]" />
-                </Link>
+                <div className="flex items-center gap-2">
+                  {!isOrderCompletedAndPaid(order) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteOrderError(null);
+                        setOrderToDelete(order);
+                      }}
+                      title="Delete this order"
+                      className="p-2 rounded-xl text-[#9299A6] hover:text-rose-400 hover:bg-rose-950/30 border border-transparent hover:border-rose-800/40 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  <Link
+                    to={`/portal/order/${order._id}`}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-[#050609] shadow-md hover:scale-[1.02] transition-all cursor-pointer"
+                    style={{
+                      background: 'linear-gradient(90deg, #D6A94F 0%, #FFBD55 100%)',
+                    }}
+                  >
+                    <span>Track Milestones</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-[#050609]" />
+                  </Link>
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Delete Order Confirmation Modal */}
+      {orderToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#050609]/80 backdrop-blur-sm">
+          <div className="w-full max-w-md p-6 sm:p-7 rounded-3xl bg-[#080A0E] border border-rose-600/60 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#292E38] pb-4">
+              <div className="flex items-center gap-2 text-rose-400 font-display font-bold text-base">
+                <AlertTriangle className="w-5 h-5" />
+                <span>Delete Project Order</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrderToDelete(null)}
+                className="p-1 rounded-lg text-[#9299A6] hover:text-white hover:bg-[#11151D] transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-[#B7BBC4] leading-relaxed">
+              <p>
+                Are you sure you want to delete order <strong className="text-white font-mono">{orderToDelete.orderNumber}</strong> (&quot;{orderToDelete.projectTitle}&quot;)?
+              </p>
+              <p className="text-[11px] text-[#9299A6]">
+                All submitted requirements, specifications, and associated chat conversations for this order will be permanently removed.
+              </p>
+            </div>
+
+            {deleteOrderError && (
+              <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-600/40 text-xs text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{deleteOrderError}</span>
+              </div>
+            )}
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setOrderToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-mono text-[#9299A6] hover:text-white hover:bg-[#11151D] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingOrder}
+                onClick={confirmDeleteOrder}
+                className="px-5 py-2.5 rounded-xl text-xs font-mono font-bold uppercase text-white bg-rose-600 hover:bg-rose-500 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingOrder ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

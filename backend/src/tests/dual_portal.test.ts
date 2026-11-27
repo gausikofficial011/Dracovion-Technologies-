@@ -264,5 +264,98 @@ describe('Dracovion Dual Portal System & Order Lifecycle Tests', () => {
     });
     expect(failedLoginRes.status).toBe(401);
   });
+
+  it('Client Self-Service: Order deletion, account deactivation, and account erasure', async () => {
+    const client1Agent = request.agent(app);
+    const client2Agent = request.agent(app);
+
+    // 1. Register Client 1
+    const client1Email = `deletable_client_${Date.now()}@example.com`;
+    const regRes1 = await client1Agent.post('/api/v1/auth/register').send({
+      email: client1Email,
+      password: 'ClientPassword2026!',
+      fullName: 'Deletable Client',
+      role: 'client',
+      phone: '+91 99999 88888',
+      city: 'Chennai',
+    });
+    expect(regRes1.status).toBe(201);
+
+    // 2. Client 1 places an order
+    const orderRes = await client1Agent.post('/api/v1/orders').send({
+      serviceCategory: 'website_development',
+      projectTitle: 'E-commerce Redesign To Be Deleted',
+      description: 'Requirements that the client later decides to cancel and delete from the system.',
+      estimatedBudget: '₹40,000',
+      priority: 'normal',
+      personalDetails: {
+        fullName: 'Deletable Client',
+        phone: '+91 99999 88888',
+        city: 'Chennai',
+      },
+    });
+    expect(orderRes.status).toBe(201);
+    const orderId = orderRes.body.order._id;
+    const orderNumber = orderRes.body.order.orderNumber;
+
+    // 3. Register Client 2
+    const client2Email = `other_client_${Date.now()}@example.com`;
+    await client2Agent.post('/api/v1/auth/register').send({
+      email: client2Email,
+      password: 'ClientPassword2026!',
+      fullName: 'Other Client',
+      role: 'client',
+    });
+
+    // 4. Client 2 CANNOT delete Client 1's order (Security Check)
+    const unauthorizedDeleteOrder = await client2Agent.delete(`/api/v1/orders/${orderId}`);
+    expect(unauthorizedDeleteOrder.status).toBe(403);
+
+    // 5. Client 1 successfully deletes their own order
+    const deleteOrderRes = await client1Agent.delete(`/api/v1/orders/${orderNumber}`);
+    expect(deleteOrderRes.status).toBe(200);
+    expect(deleteOrderRes.body.success).toBe(true);
+
+    // Verify order is no longer in Client 1's list
+    const myOrdersRes = await client1Agent.get('/api/v1/orders/my');
+    expect(myOrdersRes.status).toBe(200);
+    expect(myOrdersRes.body.orders.some((o: any) => o._id === orderId)).toBe(false);
+
+    // 6. Client 1 self-deactivates their account
+    const deactivateRes = await client1Agent.post('/api/v1/auth/client/deactivate').send({
+      reason: 'No longer required for this financial quarter',
+      password: 'ClientPassword2026!',
+    });
+    expect(deactivateRes.status).toBe(200);
+    expect(deactivateRes.body.success).toBe(true);
+
+    // After deactivation, session is destroyed and /auth/me returns null
+    const meAfterDeactivate = await client1Agent.get('/api/v1/auth/me');
+    expect(meAfterDeactivate.body.user).toBeNull();
+
+    // 7. Register Client 3 for permanent deletion test
+    const client3Agent = request.agent(app);
+    const client3Email = `purge_client_${Date.now()}@example.com`;
+    await client3Agent.post('/api/v1/auth/register').send({
+      email: client3Email,
+      password: 'PurgePassword2026!',
+      fullName: 'Purge Client',
+      role: 'client',
+    });
+
+    // Client 3 permanently deletes their account
+    const deleteAccountRes = await client3Agent.delete('/api/v1/auth/client/account').send({
+      confirmation: 'DELETE',
+    });
+    expect(deleteAccountRes.status).toBe(200);
+    expect(deleteAccountRes.body.success).toBe(true);
+
+    // Login fails because account was wiped
+    const postDeleteLogin = await client3Agent.post('/api/v1/auth/login').send({
+      email: client3Email,
+      password: 'PurgePassword2026!',
+    });
+    expect(postDeleteLogin.status).toBe(401);
+  });
 });
 

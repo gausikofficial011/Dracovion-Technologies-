@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 import {
@@ -30,12 +31,29 @@ import {
   Upload,
   Trash2,
   Image as ImageIcon,
+  UserX,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const ClientProfilePage: React.FC = () => {
-  const { user, updateProfile } = useAuth();
+  const navigate = useNavigate();
+  const { user, updateProfile, logout } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Account Deactivation & Deletion State
+  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+  const [deactivateReason, setDeactivateReason] = useState('');
+  const [deactivatePassword, setDeactivatePassword] = useState('');
+  const [isDeactivating, setIsDeactivating] = useState(false);
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Avatar / Profile Picture State
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
@@ -267,6 +285,49 @@ export const ClientProfilePage: React.FC = () => {
       setPasswordError(err.message || 'Failed to update password. Please try again.');
     } finally {
       setIsUpdatingPassword(false);
+    }
+  };
+
+  const handleDeactivateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsDeactivating(true);
+    setDeactivateError(null);
+    try {
+      await api.post('/auth/client/deactivate', {
+        reason: deactivateReason.trim() || undefined,
+        password: deactivatePassword || undefined,
+      });
+      setShowDeactivateModal(false);
+      await logout();
+      navigate('/');
+    } catch (err: any) {
+      setDeactivateError(err.message || 'Failed to deactivate account. Please check your credentials.');
+    } finally {
+      setIsDeactivating(false);
+    }
+  };
+
+  const handleDeleteAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (deleteConfirmText.trim().toUpperCase() !== 'DELETE' && !deletePassword) {
+      setDeleteError('Please type DELETE or provide your account password to confirm.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      await api.delete('/auth/client/account', {
+        confirmation: deleteConfirmText.trim(),
+        password: deletePassword || undefined,
+      });
+      setShowDeleteModal(false);
+      await logout();
+      navigate('/');
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete account. Please verify confirmation.');
+    } finally {
+      setIsDeletingAccount(false);
     }
   };
 
@@ -997,6 +1058,265 @@ export const ClientProfilePage: React.FC = () => {
           </span>
         </div>
       </div>
+
+      {/* Account Deactivation & Permanent Deletion (Danger Zone) */}
+      {!isStaff && (
+        <div className="p-6 sm:p-8 rounded-3xl bg-[#080A0E] border border-rose-950/60 shadow-2xl space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-white font-display flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-rose-400" />
+              <span>Account Governance &amp; Data Erasure</span>
+            </h3>
+            <span className="text-[10px] font-mono uppercase tracking-wider text-rose-400 px-2.5 py-1 rounded-full bg-rose-950/40 border border-rose-800/40 font-bold">
+              Danger Zone
+            </span>
+          </div>
+
+          <p className="text-xs text-[#9299A6] leading-relaxed">
+            You maintain full sovereignty over your client account. You can temporarily freeze all active operations by deactivating your account, or permanently purge your profile, uncompleted orders, and personal records from Dracovion servers.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            {/* Deactivation Box */}
+            <div className="p-5 rounded-2xl bg-[#11151D] border border-[#292E38] hover:border-amber-500/40 transition-colors flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-amber-400 font-display font-bold text-sm">
+                  <UserX className="w-4 h-4" />
+                  <span>Deactivate Account</span>
+                </div>
+                <p className="text-[11px] text-[#9299A6] leading-relaxed">
+                  Temporarily disable your profile, project alerts, and active login sessions. Past completed deliverables remain archived securely and can be restored by contacting leadership.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDeactivateError(null);
+                  setDeactivateReason('');
+                  setDeactivatePassword('');
+                  setShowDeactivateModal(true);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold text-amber-300 bg-amber-950/30 border border-amber-600/40 hover:bg-amber-900/40 hover:border-amber-500 transition-all cursor-pointer"
+              >
+                Deactivate My Account
+              </button>
+            </div>
+
+            {/* Permanent Deletion Box */}
+            <div className="p-5 rounded-2xl bg-[#11151D] border border-rose-950/60 hover:border-rose-500/40 transition-colors flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-rose-400 font-display font-bold text-sm">
+                  <Trash2 className="w-4 h-4" />
+                  <span>Permanent Account Deletion</span>
+                </div>
+                <p className="text-[11px] text-[#9299A6] leading-relaxed">
+                  Permanently delete your user credentials, personal contact snapshots, active uncompleted orders, and direct support conversations. This action cannot be reversed.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteConfirmText('');
+                  setDeletePassword('');
+                  setShowDeleteModal(true);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold text-rose-300 bg-rose-950/40 border border-rose-700/50 hover:bg-rose-900/50 hover:border-rose-500 transition-all cursor-pointer"
+              >
+                Permanently Delete Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deactivate Account Modal */}
+      <AnimatePresence>
+        {showDeactivateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#050609]/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md p-6 sm:p-7 rounded-3xl bg-[#080A0E] border border-amber-500/50 shadow-2xl space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-[#292E38] pb-4">
+                <div className="flex items-center gap-2 text-amber-400 font-display font-bold text-base">
+                  <UserX className="w-5 h-5" />
+                  <span>Confirm Account Deactivation</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDeactivateModal(false)}
+                  className="p-1 rounded-lg text-[#9299A6] hover:text-white hover:bg-[#11151D] transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-[#B7BBC4] leading-relaxed">
+                Deactivating your account will immediately terminate your session and suspend direct notifications. To restore access later, please reach out to Dracovion Executive Support.
+              </p>
+
+              {deactivateError && (
+                <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-600/40 text-xs text-rose-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{deactivateError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleDeactivateAccount} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-mono text-[#9299A6] uppercase mb-1">
+                    Reason for Deactivation (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={deactivateReason}
+                    onChange={(e) => setDeactivateReason(e.target.value)}
+                    placeholder="e.g. Project finished, temporary break, etc."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#11151D] border border-[#292E38] text-white text-xs focus:border-amber-400 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-[#9299A6] uppercase mb-1">
+                    Enter Password (if local password account)
+                  </label>
+                  <input
+                    type="password"
+                    value={deactivatePassword}
+                    onChange={(e) => setDeactivatePassword(e.target.value)}
+                    placeholder="Account password"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#11151D] border border-[#292E38] text-white text-xs font-mono focus:border-amber-400 focus:outline-none"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeactivateModal(false)}
+                    className="px-4 py-2.5 rounded-xl text-xs font-mono text-[#9299A6] hover:text-white hover:bg-[#11151D] transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeactivating}
+                    className="px-5 py-2.5 rounded-xl text-xs font-mono font-bold uppercase text-[#050609] bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-110 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isDeactivating ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Deactivating...</span>
+                      </>
+                    ) : (
+                      <span>Confirm Deactivation</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Permanently Delete Account Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#050609]/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md p-6 sm:p-7 rounded-3xl bg-[#080A0E] border border-rose-600/60 shadow-[0_0_50px_rgba(225,29,72,0.25)] space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-[#292E38] pb-4">
+                <div className="flex items-center gap-2 text-rose-400 font-display font-bold text-base">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>Permanent Account Deletion</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)}
+                  className="p-1 rounded-lg text-[#9299A6] hover:text-white hover:bg-[#11151D] transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-800/40 text-xs text-rose-300 leading-relaxed space-y-1">
+                <strong className="block text-rose-200">Irreversible Action:</strong>
+                <p>
+                  This will permanently delete your user profile, active uncompleted project orders, and support conversations from Dracovion Technologies.
+                </p>
+              </div>
+
+              {deleteError && (
+                <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-600/40 text-xs text-rose-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleDeleteAccount} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-mono text-rose-300 uppercase mb-1">
+                    Type <span className="font-bold text-white tracking-widest">DELETE</span> to confirm *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Type DELETE"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#11151D] border border-rose-800/50 text-white text-xs font-mono focus:border-rose-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-[#9299A6] uppercase mb-1">
+                    Enter Password (if local password account)
+                  </label>
+                  <input
+                    type="password"
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    placeholder="Account password"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#11151D] border border-[#292E38] text-white text-xs font-mono focus:border-rose-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteModal(false)}
+                    className="px-4 py-2.5 rounded-xl text-xs font-mono text-[#9299A6] hover:text-white hover:bg-[#11151D] transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeletingAccount || (deleteConfirmText.trim().toUpperCase() !== 'DELETE' && !deletePassword)}
+                    className="px-5 py-2.5 rounded-xl text-xs font-mono font-bold uppercase text-white bg-rose-600 hover:bg-rose-500 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-40"
+                  >
+                    {isDeletingAccount ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Deleting Account...</span>
+                      </>
+                    ) : (
+                      <span>Permanently Delete</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

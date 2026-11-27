@@ -108,8 +108,11 @@ class ApiClient {
     });
   }
 
-  delete<T>(endpoint: string): Promise<T> {
-    return this.request<T>(endpoint, { method: 'DELETE' });
+  delete<T>(endpoint: string, body?: any): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'DELETE',
+      body: body !== undefined ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
+    });
   }
 }
 
